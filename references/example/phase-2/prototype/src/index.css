@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gravy: #3D2B1F;
+  --color-fry: #E9B44C;
+  --color-curd: #FDFDFB;
+  --color-bg-brand: #F5F5F0;
+  
+  --font-serif: Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-sans: "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background-color: var(--color-bg-brand);
+  color: var(--color-gravy);
+  font-family: var(--font-sans);
+}
