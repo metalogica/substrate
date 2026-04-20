@@ -155,18 +155,46 @@ Tell the user:
 
 When the user says continue, re-run `pnpm app:compile`. Must now pass.
 
-**5d. Frontend migration.** For each component in the migration map, in this order to keep intermediate states valid:
+**5d. Frontend migration.** Execute these sub-tasks in order to keep intermediate states valid.
 
-1. Create new file at target path with rewrites applied:
-   - Convert default export to named export (unless it's a route component using `createFileRoute`).
-   - Move hooks out to `src/hooks/use<Feature>.ts`.
-   - Remove inline validation (it's now in `domain/`).
-   - Update imports to use path aliases (`@/`, `@convex/`, `@domain/`).
-2. Delete source file from `prototype/src/`.
+1. **Move components.** For each prototype file in the migration map:
+   - Create the new file at its target path with rewrites applied:
+     - Convert default exports to named exports (unless it's a route component using `createFileRoute`).
+     - Move hooks out to `src/hooks/use<Feature>.ts`.
+     - Remove inline validation (it's now in `domain/`).
+     - Update imports to use path aliases (`@/`, `@convex/`, `@domain/`).
+   - Delete the source file from `prototype/src/`.
 
-Update `src/main.tsx` with the provider tree (`ClerkProvider` + `ConvexProviderWithClerk`). It's OK that the env vars are blank — the providers will mount but auth will fail at runtime. That's fine until `/substrate-deploy` fills them.
+2. **Wire TanStack Router in `vite.config.ts`.** The scaffold ships `@tanstack/router-plugin` as a dep but does NOT activate it. Edit `vite.config.ts` to add the plugin — it MUST come before `react()`:
 
-Update `src/App.tsx` to compose the migrated routes. If the prototype used plain conditional routing, replace with TanStack Router; add `vite.config.ts` changes to include `TanStackRouterVite()` plugin.
+   ```typescript
+   import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
+   // ...
+   plugins: [
+     TanStackRouterVite({
+       routesDirectory: "./src/routes",
+       generatedRouteTree: "./src/routeTree.gen.ts",
+     }),
+     react(),
+     tailwindcss(),
+   ],
+   ```
+
+   The plugin's first run generates `src/routeTree.gen.ts` (already in the scaffold's `.gitignore`).
+
+3. **Update `src/main.tsx`** to wire the provider tree:
+
+   ```tsx
+   <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
+     <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+       <RouterProvider router={router} />
+     </ConvexProviderWithClerk>
+   </ClerkProvider>
+   ```
+
+   Env vars may be blank at this stage — providers mount, auth fails at runtime. That's fixed by `/substrate-deploy`.
+
+4. **Delete `src/App.tsx`.** Route composition now lives under `src/routes/` (`__root.tsx` + per-page files); the top-level `App.tsx` placeholder is obsolete.
 
 Run:
 
