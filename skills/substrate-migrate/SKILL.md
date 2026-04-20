@@ -153,7 +153,17 @@ Tell the user:
 
 > Convex files written. Open a new terminal and run `npx convex dev` to generate types. Wait for "Convex functions ready!" then come back here and type "continue".
 
-When the user says continue, re-run `pnpm app:compile`. Must now pass.
+When the user says continue:
+
+1. Patch `convex/tsconfig.json` so path aliases resolve from the project root:
+
+   ```bash
+   bash "$SUBSTRATE_ROOT/scripts/patch-convex-tsconfig.sh"
+   ```
+
+   Convex's generated `convex/tsconfig.json` ships the path aliases (`@/*`, `@convex/*`, `@domain/*`, `@test/*`) but omits `"baseUrl": ".."`. Without that, aliases resolve relative to `convex/` — `@domain/*` points at `convex/domain/*` instead of `<root>/domain/*`, and every Convex file that imports via an alias fails to typecheck. The patch script is idempotent.
+
+2. Re-run `pnpm app:compile`. Must now pass.
 
 **5d. Frontend migration.** Execute these sub-tasks in order to keep intermediate states valid.
 
