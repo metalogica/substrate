@@ -8,10 +8,12 @@ import type {
   NotEqual,
 } from "@test/helpers/type-assertions";
 
-// Compile-time assertions (no runtime effect, but fail the build if incorrect)
-type _TestOk = Expect<Equal<InferOk<ReturnType<typeof ok<number>>>, number>>;
-type _TestErr = Expect<Equal<InferErr<ReturnType<typeof err<string>>>, string>>;
-type _TestDistinct = Expect<
+// Compile-time assertions (no runtime effect, but fail the build if incorrect).
+// Exported so `noUnusedLocals` does not flag them — TS does not honor the
+// leading-underscore convention for type aliases under TS6196.
+export type _TestOk = Expect<Equal<InferOk<ReturnType<typeof ok<number>>>, number>>;
+export type _TestErr = Expect<Equal<InferErr<ReturnType<typeof err<string>>>, string>>;
+export type _TestDistinct = Expect<
   NotEqual<ReturnType<typeof ok<string>>, ReturnType<typeof err<string>>>
 >;
 
