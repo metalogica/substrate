@@ -49,14 +49,14 @@ If no path is found, ask the user where the substrate plugin repo lives on their
 
 ### Step 3. Socratic Q&A — project basics
 
-Ask the user these two (in one turn):
+Ask the user these two (in one turn). End every question with the default-escape suffix `[type 'default' to let me decide sensible defaults]`:
 
-1. **Project slug** (used for folder name, `package.json` name, GitHub repo, Vercel slug). Kebab-case, e.g. `gravy-app`.
-2. **One-line description** (for the README and Vercel project description).
+1. **Project slug** (used for folder name, `package.json` name, GitHub repo, Vercel slug). Kebab-case, e.g. `gravy-app`. Default: the current directory's basename, or `substrate-app` if that's unusable.
+2. **One-line description** (for the README and Vercel project description). Default: `A substrate project.`
 
 ### Step 4. Socratic Q&A — product details
 
-Focus on the **product**, not the technology. The user is non-technical — skip jargon. Walk through these, 1–2 per turn, probing when answers are vague:
+Focus on the **product**, not the technology. The user is non-technical — skip jargon. Walk through these, 1–2 per turn, probing when answers are vague. End every question with `[type 'default' to let me decide sensible defaults]`. If the user picks `default`, pick a bland-but-valid value that keeps the pipeline moving and summarize defaults chosen before scaffolding so they can course-correct:
 
 1. **Product name** — the user-facing name (may differ from the slug: e.g. "Gravy" vs `gravy-app`).
 2. **One-line pitch** — what does it do in plain language? (e.g. "A marketplace to discover, list, and review poutine stores across Canada.")
@@ -169,3 +169,4 @@ Then show the contents of `docs/product/ai-studio-prompt.md` in-line so the user
 - MUST print the full handoff instructions (step 8) even if the scaffold succeeded silently — the user needs the Gemini AI Studio next-step.
 - SHOULD keep Q&A tight — 1–2 questions per turn, conversational, probing when answers are vague.
 - SHOULD skip jargon (no "Convex mutation", no "TanStack Router route") unless the user signals comfort with it.
+- MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on every Socratic question. When the user picks `default`, choose a reasonable value and summarize the defaults chosen before scaffolding so the user can course-correct.

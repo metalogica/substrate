@@ -121,7 +121,7 @@ Check for a remote:
 git remote get-url origin 2>/dev/null || echo "NO_REMOTE"
 ```
 
-If `NO_REMOTE`, ask the user for a repo name and visibility, then run:
+If `NO_REMOTE`, ask the user for a repo name and visibility (end each question with `[type 'default' to let me decide sensible defaults]` — default repo name is the project slug from `package.json#name`; default visibility is `private`), then run:
 
 ```bash
 bash "$SUBSTRATE_ROOT/scripts/init-github.sh" "<repo-name>" "<public|private>"
@@ -238,3 +238,4 @@ Next steps:
 - MUST NOT force-push or overwrite the user's remote main.
 - SHOULD narrate clearly between interactive pauses — the user is switching between browser, terminal, and Claude, and needs to know which context they're in.
 - SHOULD tolerate partial progress — if the user has already done steps 2 or 5 manually, skip them rather than re-running and overwriting.
+- MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on any Socratic question (repo name, visibility, domain choice). Typed confirmations (Clerk key entry, domain-name retype for `vercel domains buy`) are NOT defaultable — those are deliberate manual inputs by design.

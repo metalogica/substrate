@@ -30,7 +30,7 @@ If no objective is passed, ask the user for one.
 |--------|----------|
 | Project not scaffolded (no `docs/doctrine/`) | Run `/substrate:init` first. |
 | Objective touches 3+ layers AND introduces a new table | Escalate to `/substrate:architect-spec` — this is too big for a single-pass loop. |
-| Objective is ambiguous ("make it better", "fix the UI") | Ask the user to be specific before starting. |
+| Objective is ambiguous ("make it better", "fix the UI") | Ask the user to be specific before starting. End the clarifying question with `[type 'default' to let me decide sensible defaults]` — if the user picks `default`, propose a concrete interpretation and confirm before planning. |
 
 ## Workflow
 
@@ -136,3 +136,4 @@ Do NOT push.
 - MUST NOT push or deploy — `/substrate:deploy` handles that.
 - MUST NOT make the loop more than 3 iterations without checking in. If the user has failed three attempts, stop and ask whether to escalate to `/substrate:architect-spec` or abandon.
 - SHOULD attempt exactly one targeted fix on a failing verify before handing back to the user. Spiraling on failures wastes budget.
+- MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on any clarifying question posed to the user. Approval gates (y/n/modify) are not Socratic Q&A and are exempt.

@@ -49,7 +49,7 @@ Resolve ambiguity through interactive Q&A with the user. Focus on:
 - **Trust boundaries** (authenticated vs. public, rate limits, admin-only)
 - **Failure modes** (what can go wrong, how do we recover, what's the rollback)
 
-Keep questions tight — one or two at a time, not a wall of text. Continue until you can draft a spec whose acceptance criteria are binary pass/fail.
+Keep questions tight — one or two at a time, not a wall of text. End every question with `[type 'default' to let me decide sensible defaults]`. If the user picks `default`, choose a reasonable value grounded in the brief + doctrines and continue. Continue until you can draft a spec whose acceptance criteria are binary pass/fail.
 
 ### 3. Route to sub-architects
 
@@ -125,4 +125,5 @@ Do NOT attempt to execute the spec yourself. The whole point of the new-session 
 - MUST NOT write code or files beyond the spec document itself.
 - MUST dispatch sub-architects in parallel when they cover independent layers.
 - MUST use the naming convention `<feature>-spec.md` per `brief-format.md` §3.
+- MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on every Q&A question. If the user picks `default`, choose a reasonable value and note the default in the composed spec's Change Log so it's reviewable.
 - SHOULD stay concise during Q&A — this is the user's time, not a chatbot exercise.
