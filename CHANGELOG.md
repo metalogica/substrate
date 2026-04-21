@@ -38,5 +38,5 @@ First public release. Distributed via the `metalogica` plugin marketplace:
 ### Metadata
 
 - Added `LICENSE` (MIT).
-- Added `homepage`, `repository`, `bugs` fields to `plugin.json`.
+- Added `homepage` and `repository` fields to `plugin.json`.
 - Added `.claude-plugin/marketplace.json` for marketplace-style install.
