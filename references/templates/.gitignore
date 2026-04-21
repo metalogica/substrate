@@ -1,7 +1,9 @@
 node_modules
 dist
-.env.local
-.env
+# All env files (.env, .env.local, .env.prod, .env.production.local, etc.)
+# .env.example IS tracked — it's the template without real values.
+.env*
+!.env.example
 .convex
 .vercel
 .DS_Store
