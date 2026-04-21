@@ -2,7 +2,7 @@
 
 {{PROJECT_DESCRIPTION}}
 
-Built on **Substrate** — a Claude Code plugin that scaffolds full-stack Vite + Convex apps following Domain-Driven Design, railway-oriented programming, and a testing pyramid.
+Built on [**Substrate**](https://github.com/metalogica/substrate) — a Claude Code plugin that scaffolds full-stack Vite + Convex apps following Domain-Driven Design, railway-oriented programming, and a testing pyramid.
 
 ## Stack
 
