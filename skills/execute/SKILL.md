@@ -1,11 +1,11 @@
 ---
-name: substrate-execute
-description: "Execute a multi-phase SDD spec (produced by /architect-spec) with verification gates between each step and phase. Invoke with a spec path (docs/tasks/ongoing/<feature>/<feature>-spec.md). Walks Phase N → Step N.M → Verify → Gate per docs/protocol/sdd/execution-format.md, pausing at each phase gate for user approval. Best run in a fresh Claude session for a clean context window."
+name: execute
+description: "Execute a multi-phase SDD spec (produced by /substrate:architect-spec) with verification gates between each step and phase. Invoke with a spec path (docs/tasks/ongoing/<feature>/<feature>-spec.md). Walks Phase N → Step N.M → Verify → Gate per docs/protocol/sdd/execution-format.md, pausing at each phase gate for user approval. Best run in a fresh Claude session for a clean context window."
 ---
 
-# /substrate-execute
+# /substrate:execute
 
-Run a spec phase-by-phase with gated verification. This is the execution half of the SDD pipeline — `/architect-spec` produces the spec; this skill executes it.
+Run a spec phase-by-phase with gated verification. This is the execution half of the SDD pipeline — `/substrate:architect-spec` produces the spec; this skill executes it.
 
 ## Arguments
 
@@ -21,7 +21,7 @@ Run a spec phase-by-phase with gated verification. This is the execution half of
 | Signal | Redirect |
 |--------|----------|
 | Spec path missing or empty | Ask for the path. |
-| Spec does not contain a `## N. Prompt Execution Strategy` section | Not executable — it's a design doc. Run `/architect-spec` to produce an executable version. |
+| Spec does not contain a `## N. Prompt Execution Strategy` section | Not executable — it's a design doc. Run `/substrate:architect-spec` to produce an executable version. |
 | Same session already contains the brief + Q&A + architect outputs | Open a new terminal and re-invoke. A cluttered context window degrades step quality on long specs. |
 
 ## Workflow
@@ -141,7 +141,7 @@ Doctrine amendments: <path or "none">
 
 Next:
   - git push when you're ready
-  - Or continue iterating with /quick-spec, /architect-spec, or /substrate-deploy
+  - Or continue iterating with /substrate:quick-spec, /substrate:architect-spec, or /substrate:deploy
 ```
 
 ## Constraints
@@ -151,7 +151,7 @@ Next:
 - MUST pause for user approval between phases (after each gate). Non-negotiable — gated execution is the whole point of this skill.
 - MUST run the Doctrine Review phase — never skip the final phase.
 - MUST commit after successful execution (step 6). One commit per spec = one revertable unit.
-- MUST NOT push to GitHub or deploy — that's for the user or `/substrate-deploy`.
+- MUST NOT push to GitHub or deploy — that's for the user or `/substrate:deploy`.
 - MUST NOT invent steps beyond what the spec contains. The spec is binding during execution (per `_SPEC-STANDARD.md` §3).
 - SHOULD narrate each phase + step + verify result so the user sees liveness on long executions.
 - SHOULD attempt one obvious fix when a verify fails (missing import, trivial type error); escalate to the user if the first fix doesn't resolve.

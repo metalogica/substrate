@@ -1,9 +1,9 @@
 ---
-name: substrate-init
-description: "Scaffold a new Substrate project in an empty directory. Drops a Vite + Convex + Clerk + TanStack Router + Tailwind v4 kernel that follows DDD, railway-oriented programming, and the testing pyramid. Runs product-focused Socratic Q&A, copies doctrines and SDD protocol into docs/, and generates the twin Gemini AI Studio scaffolding prompt plus runtime AI system prompt. Invoke in a blank folder before /substrate-migrate."
+name: init
+description: "Scaffold a new Substrate project in an empty directory. Drops a Vite + Convex + Clerk + TanStack Router + Tailwind v4 kernel that follows DDD, railway-oriented programming, and the testing pyramid. Runs product-focused Socratic Q&A, copies doctrines and SDD protocol into docs/, and generates the twin Gemini AI Studio scaffolding prompt plus runtime AI system prompt. Invoke in a blank folder before /substrate:migrate."
 ---
 
-# /substrate-init
+# /substrate:init
 
 Scaffold a new substrate project from an empty directory through the start of stage 1.
 
@@ -18,9 +18,9 @@ Detect stage by filesystem. If ANY of these exist, STOP and redirect the user in
 
 | Signal | Redirect |
 |--------|----------|
-| `package.json` exists | Already scaffolded. Run `/quick-spec` or `/architect-spec`. |
-| `prototype/` directory exists | Stage 2 — run `/substrate-migrate`. |
-| `src/` directory with code exists | Stage 3 — run `/substrate-deploy` or `/quick-spec`. |
+| `package.json` exists | Already scaffolded. Run `/substrate:quick-spec` or `/substrate:architect-spec`. |
+| `prototype/` directory exists | Stage 2 — run `/substrate:migrate`. |
+| `src/` directory with code exists | Stage 3 — run `/substrate:deploy` or `/substrate:quick-spec`. |
 | `convex/` or `domain/` exists | Project is already initialized. Pick a specific skill for the work you want to do. |
 
 ## Workflow
@@ -154,7 +154,7 @@ Next steps:
   4. Iterate in the AI Studio UI until the look is right.
   5. Download the project as a ZIP.
   6. Extract the ZIP contents into /prototype at this repo's root.
-  7. Return here and run /substrate-migrate.
+  7. Return here and run /substrate:migrate.
 ```
 
 Then show the contents of `docs/product/ai-studio-prompt.md` in-line so the user can copy without opening a second file.

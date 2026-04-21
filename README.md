@@ -44,31 +44,31 @@ Skills and agents are auto-discovered.
 empty folder
     │
     ▼
-/substrate-init            ← stage 1: scaffold + Socratic Q&A + twin Gemini prompts
+/substrate:init            ← stage 1: scaffold + Socratic Q&A + twin Gemini prompts
     │
     ▼
 aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototype
     │
     ▼
-/substrate-migrate         ← stage 2: architects analyze prototype, move src/, draft Convex
+/substrate:migrate         ← stage 2: architects analyze prototype, move src/, draft Convex
     │
     ▼
-/quick-spec  OR  /architect-spec + /substrate-execute   ← iterate features
+/substrate:quick-spec  OR  /substrate:architect-spec + /substrate:execute   ← iterate features
     │
     ▼
-/substrate-deploy          ← stage 3: Clerk + Vercel + live URL
+/substrate:deploy          ← stage 3: Clerk + Vercel + live URL
 ```
 
 ## Skills
 
 | Skill | Purpose |
 |-------|---------|
-| `/substrate-init` | Scaffold a new project in an empty directory. Runs product-focused Socratic Q&A, writes the kernel (domain + tests + docs + doctrines), generates the Gemini AI Studio Build prompt + optional runtime AI system prompt. |
-| `/substrate-migrate` | Migrate a Gemini AI Studio prototype (dropped in `prototype/`) into the substrate kernel. Three architect subagents (domain / backend / frontend) analyze it in parallel; you approve a migration plan; files move into `src/` with doctrine alignment and a drafted Convex backend. |
-| `/architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, dispatches all three architects in parallel, composes an executable spec following the SDD protocol. |
-| `/substrate-execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. |
-| `/quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/architect-spec` for anything big. |
-| `/substrate-deploy` | Walk Clerk setup (no Google Cloud required — Clerk's dev instance ships with shared OAuth), wire the repo to GitHub + Vercel, push production env vars, trigger the first live deploy. |
+| `/substrate:init` | Scaffold a new project in an empty directory. Runs product-focused Socratic Q&A, writes the kernel (domain + tests + docs + doctrines), generates the Gemini AI Studio Build prompt + optional runtime AI system prompt. |
+| `/substrate:migrate` | Migrate a Gemini AI Studio prototype (dropped in `prototype/`) into the substrate kernel. Three architect subagents (domain / backend / frontend) analyze it in parallel; you approve a migration plan; files move into `src/` with doctrine alignment and a drafted Convex backend. |
+| `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, dispatches all three architects in parallel, composes an executable spec following the SDD protocol. |
+| `/substrate:execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. |
+| `/substrate:quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/substrate:architect-spec` for anything big. |
+| `/substrate:deploy` | Walk Clerk setup (no Google Cloud required — Clerk's dev instance ships with shared OAuth), wire the repo to GitHub + Vercel, push production env vars, trigger the first live deploy. |
 
 ## Doctrine
 

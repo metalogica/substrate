@@ -1,9 +1,9 @@
 ---
-name: substrate-deploy
-description: "Stage 3 deploy pipeline for substrate projects. Walks the user through Clerk setup (no Google Cloud Console required — Clerk's dev instance uses shared OAuth credentials), wires Clerk keys into .env.local and Convex env vars, ensures the repo is on GitHub, links Vercel for auto-deploy-on-push, pushes production env vars, and triggers the first deploy. Invoke after /substrate-migrate once the migrated app runs locally."
+name: deploy
+description: "Stage 3 deploy pipeline for substrate projects. Walks the user through Clerk setup (no Google Cloud Console required — Clerk's dev instance uses shared OAuth credentials), wires Clerk keys into .env.local and Convex env vars, ensures the repo is on GitHub, links Vercel for auto-deploy-on-push, pushes production env vars, and triggers the first deploy. Invoke after /substrate:migrate once the migrated app runs locally."
 ---
 
-# /substrate-deploy
+# /substrate:deploy
 
 Get a migrated substrate project from localhost to a live Vercel URL. Clerk + Vercel setup, production env, first deploy.
 
@@ -11,7 +11,7 @@ Get a migrated substrate project from localhost to a live Vercel URL. Clerk + Ve
 
 ## When to run
 
-- Migration has completed (`/substrate-migrate`) — `src/` contains real product content, not the substrate welcome screen.
+- Migration has completed (`/substrate:migrate`) — `src/` contains real product content, not the substrate welcome screen.
 - Convex schema + functions exist, `_generated/` is present (codegen has run).
 - The user wants live Clerk auth + a shared URL to demo the app.
 
@@ -19,9 +19,9 @@ Get a migrated substrate project from localhost to a live Vercel URL. Clerk + Ve
 
 | Signal | Redirect |
 |--------|----------|
-| `src/App.tsx` still shows the substrate welcome screen | Migration hasn't run. Use `/substrate-migrate` first. |
+| `src/App.tsx` still shows the substrate welcome screen | Migration hasn't run. Use `/substrate:migrate` first. |
 | `convex/_generated/` missing | Run `npx convex dev` once to generate types before deploying. |
-| `.env.local` already has valid Clerk keys AND `.vercel/project.json` exists | Deploy has already run. Use `/quick-spec` for further iteration, or explicitly confirm the user wants to re-run. |
+| `.env.local` already has valid Clerk keys AND `.vercel/project.json` exists | Deploy has already run. Use `/substrate:quick-spec` for further iteration, or explicitly confirm the user wants to re-run. |
 
 ## Workflow
 
@@ -36,7 +36,7 @@ test -f package.json \
 
 If output is `STAGE_MISMATCH`, stop and redirect.
 
-Resolve `SUBSTRATE_ROOT` (same search pattern as `/substrate-init`):
+Resolve `SUBSTRATE_ROOT` (same search pattern as `/substrate:init`):
 
 ```bash
 for candidate in \
@@ -111,7 +111,7 @@ Wait for explicit confirmation. If `n`, ask what went wrong — common issues:
 
 - `auth.config.ts` references wrong `CLERK_JWT_ISSUER_DOMAIN` → re-run setup-clerk.sh.
 - `main.tsx` not wrapped in `ConvexProviderWithClerk` → migrate should have done this; double-check.
-- No users table row after sign-in → may need a `convex/users.ts` mutation to sync Clerk users on first sign-in. Flag to the user; this might be a /quick-spec feature to add before deploying.
+- No users table row after sign-in → may need a `convex/users.ts` mutation to sync Clerk users on first sign-in. Flag to the user; this might be a /substrate:quick-spec feature to add before deploying.
 
 ### Step 5. Ensure the repo is on GitHub
 
@@ -222,7 +222,7 @@ Stage any changes from deploy (mostly none — scripts don't write to tracked fi
 
 Next steps:
   - Add the Vercel URL to Clerk's allowlisted domains if not done
-  - Use /quick-spec or /architect-spec to ship more features
+  - Use /substrate:quick-spec or /substrate:architect-spec to ship more features
   - Consider upgrading to a dedicated production Convex deployment
     later via `npx convex deploy --prod`
 ```

@@ -2,7 +2,7 @@
 # Walks the user through Clerk setup: prompts for keys, writes .env.local,
 # sets Convex env vars.
 #
-# Run from a substrate project root (typically during /substrate-deploy).
+# Run from a substrate project root (typically during /substrate:deploy).
 
 set -euo pipefail
 

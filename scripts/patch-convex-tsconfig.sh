@@ -5,7 +5,7 @@
 # aliases but omits the baseUrl).
 #
 # Run once after `npx convex dev` generates convex/tsconfig.json,
-# typically from /substrate-migrate after Convex codegen completes.
+# typically from /substrate:migrate after Convex codegen completes.
 # Idempotent — safe to re-run.
 
 set -euo pipefail

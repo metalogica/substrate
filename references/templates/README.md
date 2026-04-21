@@ -41,12 +41,12 @@ pnpm app:compile   # typecheck only
 
 | Skill | Purpose |
 |-------|---------|
-| `/substrate-init` | Scaffold a new project (already run) |
-| `/substrate-migrate` | Move a Gemini AI Studio prototype into `src/`, draft Convex contract |
-| `/architect-spec <brief>` | Produce a multi-phase spec from a brief |
-| `/substrate-execute <spec>` | Execute a spec in a fresh session with verification gates |
-| `/quick-spec` | Lightweight single-feature iteration |
-| `/substrate-deploy` | Set up Clerk + Vercel + first deploy |
+| `/substrate:init` | Scaffold a new project (already run) |
+| `/substrate:migrate` | Move a Gemini AI Studio prototype into `src/`, draft Convex contract |
+| `/substrate:architect-spec <brief>` | Produce a multi-phase spec from a brief |
+| `/substrate:execute <spec>` | Execute a spec in a fresh session with verification gates |
+| `/substrate:quick-spec` | Lightweight single-feature iteration |
+| `/substrate:deploy` | Set up Clerk + Vercel + first deploy |
 
 ## Doctrine
 

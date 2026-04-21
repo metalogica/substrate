@@ -9,12 +9,12 @@ A Claude Code **plugin** that scaffolds full-stack Vite + Convex + Clerk applica
 The plugin exposes:
 
 - **6 user-facing skills** under `skills/`:
-  - `/substrate-init` — scaffold a new project in an empty directory (stage 1)
-  - `/substrate-migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
-  - `/substrate-deploy` — Clerk + Vercel + first live deploy (stage 3)
-  - `/architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs
-  - `/substrate-execute <spec>` — executes a spec phase-by-phase with verification gates
-  - `/quick-spec` — lightweight single-feature iteration loop
+  - `/substrate:init` — scaffold a new project in an empty directory (stage 1)
+  - `/substrate:migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
+  - `/substrate:deploy` — Clerk + Vercel + first live deploy (stage 3)
+  - `/substrate:architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs
+  - `/substrate:execute <spec>` — executes a spec phase-by-phase with verification gates
+  - `/substrate:quick-spec` — lightweight single-feature iteration loop
 
 - **4 architect subagents** under `agents/`:
   - `domain-architect`, `backend-architect`, `frontend-architect` — per-layer specialists spawned in parallel by the orchestrator skills
@@ -44,7 +44,7 @@ Symlink the whole repo into your plugins path, then edit in place. Changes are p
 ln -s /path/to/this/repo ~/.claude/plugins/substrate
 ```
 
-To test in isolation, `cd` into a fresh sandbox directory and invoke `/substrate-init`. The skills discover `SUBSTRATE_ROOT` via a path-search helper (see `skills/substrate-init/SKILL.md` step 2).
+To test in isolation, `cd` into a fresh sandbox directory and invoke `/substrate:init`. The skills discover `SUBSTRATE_ROOT` via a path-search helper (see `skills/init/SKILL.md` step 2).
 
 ## Repo layout
 
@@ -53,12 +53,12 @@ substrate/
 ├── .claude-plugin/plugin.json     # plugin manifest
 ├── agents/                         # 4 subagents (markdown with YAML frontmatter)
 ├── skills/                         # 6 user-facing skills
-│   ├── substrate-init/SKILL.md
-│   ├── substrate-migrate/SKILL.md
+│   ├── init/SKILL.md
+│   ├── migrate/SKILL.md
 │   ├── architect-spec/SKILL.md
-│   ├── substrate-execute/SKILL.md
+│   ├── execute/SKILL.md
 │   ├── quick-spec/SKILL.md
-│   └── substrate-deploy/SKILL.md
+│   └── deploy/SKILL.md
 ├── references/
 │   ├── doctrines/                  # copied to target project's docs/doctrine/
 │   ├── sdd-protocol/               # copied to target project's docs/protocol/sdd/
@@ -84,7 +84,7 @@ Skills detect which stage the user is in by inspecting the current directory, no
 
 ### Agents are spawned by skills, never directly by the user
 
-Users invoke skills (`/substrate-init`, `/architect-spec`, etc.). Skills spawn agents via the Agent tool. The three layer architects are spawned in parallel by `architect-spec` and `substrate-migrate` in a single message with three tool calls.
+Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skills spawn agents via the Agent tool. The three layer architects are spawned in parallel by `architect-spec` and `substrate:migrate` in a single message with three tool calls.
 
 ### Scaffold by copy, not by template engine
 
@@ -106,11 +106,11 @@ There's no automated test suite for the plugin itself (skills are natural-langua
 
 1. Symlink the repo into `~/.claude/plugins/substrate/`.
 2. `cd` into a fresh sandbox directory.
-3. Invoke `/substrate-init`, walk the Socratic Q&A, verify the scaffold is green (`pnpm app:compile && pnpm app:test`).
-4. Drop a sample Gemini Build export into `prototype/`, invoke `/substrate-migrate`, verify the migration plan is sensible and the executed migration stays green.
-5. Write a minimal brief at `docs/tasks/ongoing/<feature>/<feature>-brief.md`, invoke `/architect-spec`, verify a well-formed spec is produced.
-6. In a **fresh Claude session**, invoke `/substrate-execute` on that spec. Verify it walks phases correctly and pauses at each gate.
-7. Run `/substrate-deploy` end-to-end through Clerk + Vercel; confirm a live URL works with Google sign-in.
+3. Invoke `/substrate:init`, walk the Socratic Q&A, verify the scaffold is green (`pnpm app:compile && pnpm app:test`).
+4. Drop a sample Gemini Build export into `prototype/`, invoke `/substrate:migrate`, verify the migration plan is sensible and the executed migration stays green.
+5. Write a minimal brief at `docs/tasks/ongoing/<feature>/<feature>-brief.md`, invoke `/substrate:architect-spec`, verify a well-formed spec is produced.
+6. In a **fresh Claude session**, invoke `/substrate:execute` on that spec. Verify it walks phases correctly and pauses at each gate.
+7. Run `/substrate:deploy` end-to-end through Clerk + Vercel; confirm a live URL works with Google sign-in.
 
 Regressions to watch for:
 

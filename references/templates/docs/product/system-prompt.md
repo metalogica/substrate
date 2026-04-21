@@ -5,7 +5,7 @@
   {{PRODUCT_NAME}}'s assistant features (if any). It is NOT used by Gemini
   AI Studio at scaffolding time.
 
-  It gets wired in during stage 3 (substrate-deploy) as the system prompt
+  It gets wired in during stage 3 (substrate:deploy) as the system prompt
   for convex/actions/assistant.ts.
 -->
 

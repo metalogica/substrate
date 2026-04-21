@@ -1,9 +1,9 @@
 ---
-name: substrate-migrate
-description: "Migrate a Gemini AI Studio prototype into the substrate kernel. Expects prototype/ (Gemini Build export) alongside a scaffolded substrate project. Spawns domain/backend/frontend architects in parallel to analyze the prototype against substrate doctrines, drafts Convex schema + functions from inferred data shapes, moves components into src/ with doctrine alignment, wires Clerk+Convex providers, and presents a migration plan for approval before executing. Invoke after /substrate-init + Gemini handoff, before /substrate-deploy."
+name: migrate
+description: "Migrate a Gemini AI Studio prototype into the substrate kernel. Expects prototype/ (Gemini Build export) alongside a scaffolded substrate project. Spawns domain/backend/frontend architects in parallel to analyze the prototype against substrate doctrines, drafts Convex schema + functions from inferred data shapes, moves components into src/ with doctrine alignment, wires Clerk+Convex providers, and presents a migration plan for approval before executing. Invoke after /substrate:init + Gemini handoff, before /substrate:deploy."
 ---
 
-# /substrate-migrate
+# /substrate:migrate
 
 Bring a Gemini AI Studio prototype into the substrate kernel. This is stage 2 — turning a standalone Vite app (frontend only, mock data) into a full-stack Vite + Convex + Clerk project aligned to the three doctrines.
 
@@ -19,9 +19,9 @@ Bring a Gemini AI Studio prototype into the substrate kernel. This is stage 2 �
 
 | Signal | Redirect |
 |--------|----------|
-| `prototype/` missing | Wait for the Gemini export. Run `/substrate-init` first if needed, or drop the ZIP contents into `prototype/`. |
-| `package.json` at repo root missing | Project not scaffolded. Run `/substrate-init` first. |
-| `src/App.tsx` no longer shows the substrate welcome screen | Migration already ran. Use `/quick-spec` or `/architect-spec` for further work. |
+| `prototype/` missing | Wait for the Gemini export. Run `/substrate:init` first if needed, or drop the ZIP contents into `prototype/`. |
+| `package.json` at repo root missing | Project not scaffolded. Run `/substrate:init` first. |
+| `src/App.tsx` no longer shows the substrate welcome screen | Migration already ran. Use `/substrate:quick-spec` or `/substrate:architect-spec` for further work. |
 
 ## Workflow
 
@@ -120,7 +120,7 @@ Hooks (R new bridges):
   - ...
 
 Providers (src/main.tsx rewrite):
-  - Add ClerkProvider + ConvexProviderWithClerk (env vars will be blank until /substrate-deploy)
+  - Add ClerkProvider + ConvexProviderWithClerk (env vars will be blank until /substrate:deploy)
 
 Files dropped (Gemini AI Studio artifacts not migrated):
   - prototype/package.json, tsconfig.json, vite.config.ts, index.html
@@ -202,7 +202,7 @@ When the user says continue:
    </ClerkProvider>
    ```
 
-   Env vars may be blank at this stage — providers mount, auth fails at runtime. That's fixed by `/substrate-deploy`.
+   Env vars may be blank at this stage — providers mount, auth fails at runtime. That's fixed by `/substrate:deploy`.
 
 4. **Delete `src/App.tsx`.** Route composition now lives under `src/routes/` (`__root.tsx` + per-page files); the top-level `App.tsx` placeholder is obsolete.
 
@@ -270,9 +270,9 @@ Print next steps:
   Prototype: archived to prototype-archive/
 
 Next:
-  - Run /substrate-deploy to set up Clerk + Vercel + first deploy
-  - OR run /quick-spec to add more features before deploying
-  - OR run /architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a large multi-phase feature
+  - Run /substrate:deploy to set up Clerk + Vercel + first deploy
+  - OR run /substrate:quick-spec to add more features before deploying
+  - OR run /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a large multi-phase feature
 
 Keep `npx convex dev` running in another terminal to stay in sync while you iterate.
 ```
@@ -285,7 +285,7 @@ Keep `npx convex dev` running in another terminal to stay in sync while you iter
 - MUST preserve doctrine alignment throughout the rewrite: named exports, no hooks in pure components, validation in `domain/`, `v.*` validators with indexes, `requireAuth` on non-public functions.
 - MUST run verification (`pnpm app:compile && pnpm app:test`) after each sub-step 5a→5b→5c→5d→5e. If a sub-step breaks green, fix before moving on — never pile up breakage.
 - MUST pause and wait for the user to run `npx convex dev` at step 5c before typechecking the Convex functions.
-- MUST NOT push to GitHub or deploy to Vercel — that belongs to `/substrate-deploy`.
+- MUST NOT push to GitHub or deploy to Vercel — that belongs to `/substrate:deploy`.
 - MUST NOT invent data shapes not present in the prototype. If a field is ambiguous (e.g. optional vs required), ask the user.
 - MUST archive `prototype/` rather than deleting outright (step 5f) — the user may want to reference it.
 - MUST commit at step 7 so the migration is a single revertable unit.

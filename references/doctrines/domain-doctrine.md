@@ -180,7 +180,7 @@ Rules:
 All fallible domain operations MUST return `Result<T, E>` rather than throwing.
 
 ```typescript
-// domain/shared/result.ts — scaffolded by substrate-init
+// domain/shared/result.ts — scaffolded by substrate:init
 
 export type Result<T, E> = Ok<T> | Err<E>;
 

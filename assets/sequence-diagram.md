@@ -11,13 +11,13 @@ The filesystem is the state machine. Each transition is driven by a skill.
 ```mermaid
 stateDiagram-v2
     [*] --> Empty
-    Empty --> Scaffolded: /substrate-init
+    Empty --> Scaffolded: /substrate:init
     Scaffolded --> PrototypeReady: Gemini AI Studio → download ZIP → extract to /prototype
-    PrototypeReady --> Migrated: /substrate-migrate
-    Migrated --> Deployed: /substrate-deploy
-    Migrated --> Migrated: /quick-spec (small feature)
-    Migrated --> Migrated: /architect-spec → /substrate-execute (large feature)
-    Deployed --> Deployed: /quick-spec (iterate)
+    PrototypeReady --> Migrated: /substrate:migrate
+    Migrated --> Deployed: /substrate:deploy
+    Migrated --> Migrated: /substrate:quick-spec (small feature)
+    Migrated --> Migrated: /substrate:architect-spec → /substrate:execute (large feature)
+    Deployed --> Deployed: /substrate:quick-spec (iterate)
     Deployed --> Deployed: git push (Vercel auto-deploys)
     Deployed --> [*]
 
@@ -57,9 +57,9 @@ sequenceDiagram
     participant Convex
     participant Vercel
 
-    Note over User,Claude: Stage 1 — /substrate-init
+    Note over User,Claude: Stage 1 — /substrate:init
 
-    User->>Claude: /substrate-init
+    User->>Claude: /substrate:init
     Claude->>User: Socratic Q&A (product name, pitch, personas, flows, entities, pages, UI tone, AI features?)
     User-->>Claude: answers
     Claude->>Claude: scaffold.sh (copy templates + install deps + verify green)
@@ -72,9 +72,9 @@ sequenceDiagram
     Gemini-->>User: iterate UI in Build mode
     User->>User: download ZIP, extract to /prototype
 
-    Note over User,Claude: Stage 2 — /substrate-migrate
+    Note over User,Claude: Stage 2 — /substrate:migrate
 
-    User->>Claude: /substrate-migrate
+    User->>Claude: /substrate:migrate
     Claude->>Claude: read prototype tree
 
     par Parallel architect dispatch
@@ -93,9 +93,9 @@ sequenceDiagram
     Claude->>Claude: archive prototype → prototype-archive/
     Claude->>Claude: git commit (migration)
 
-    Note over User,Vercel: Stage 3 — /substrate-deploy
+    Note over User,Vercel: Stage 3 — /substrate:deploy
 
-    User->>Claude: /substrate-deploy
+    User->>Claude: /substrate:deploy
     Claude->>Clerk: guide user through dashboard (Clerk ships shared Google OAuth — no GCP setup)
     User-->>Clerk: create app + JWT template
     Clerk-->>User: pk_test_, sk_test_, JWT issuer domain
@@ -116,7 +116,7 @@ sequenceDiagram
 
 ---
 
-## Feature iteration — /quick-spec
+## Feature iteration — /substrate:quick-spec
 
 Lightweight single-feature loop. Skeleton-of-thought planning grounded in doctrine, manual test gate, commit on pass.
 
@@ -125,7 +125,7 @@ sequenceDiagram
     actor User
     participant Claude
 
-    User->>Claude: /quick-spec "add delete button to posts"
+    User->>Claude: /substrate:quick-spec "add delete button to posts"
 
     Note over Claude: Plan (skeleton-of-thought)
     Claude->>Claude: skeleton (3-7 bullets)
@@ -152,7 +152,7 @@ sequenceDiagram
 
 ---
 
-## Large feature — /architect-spec → /substrate-execute
+## Large feature — /substrate:architect-spec → /substrate:execute
 
 Heavyweight gated loop. User writes a brief by hand; orchestrator runs Socratic Q&A + parallel architect analysis + spec composition. A FRESH Claude session executes the spec phase-by-phase with approval gates.
 
@@ -164,7 +164,7 @@ sequenceDiagram
 
     User->>User: write docs/tasks/ongoing/<feature>/<feature>-brief.md
 
-    User->>SessionA: /architect-spec <brief-path>
+    User->>SessionA: /substrate:architect-spec <brief-path>
     SessionA->>SessionA: validate brief sections
     SessionA->>SessionA: architect-spec agent spawned
     SessionA->>User: Socratic Q&A
@@ -185,7 +185,7 @@ sequenceDiagram
 
     Note over User,SessionB: Fresh context window — clean slate for long execution
 
-    User->>SessionB: claude /substrate-execute <spec-path>
+    User->>SessionB: claude /substrate:execute <spec-path>
     SessionB->>SessionB: parse execution plan
     SessionB->>User: phase summary, ok to start?
     User-->>SessionB: yes
@@ -236,7 +236,7 @@ sequenceDiagram
 
 | Agent | Invoked by | Role |
 |-------|-----------|------|
-| `domain-architect` | `architect-spec`, `/substrate-migrate` | Identifies domain concepts, enforces purity + Result pattern + Brand types. |
-| `backend-architect` | `architect-spec`, `/substrate-migrate` | Schema + indexes + queries/mutations/actions, `requireAuth` placement, external API routing. |
-| `frontend-architect` | `architect-spec`, `/substrate-migrate` | Route structure, hook-layer bridges, pure presentational components, Tailwind v4 styling. |
-| `architect-spec` | `/architect-spec` | SDD orchestrator. Runs Q&A, dispatches the three layer architects in parallel, composes the gated spec. |
+| `domain-architect` | `architect-spec`, `/substrate:migrate` | Identifies domain concepts, enforces purity + Result pattern + Brand types. |
+| `backend-architect` | `architect-spec`, `/substrate:migrate` | Schema + indexes + queries/mutations/actions, `requireAuth` placement, external API routing. |
+| `frontend-architect` | `architect-spec`, `/substrate:migrate` | Route structure, hook-layer bridges, pure presentational components, Tailwind v4 styling. |
+| `architect-spec` | `/substrate:architect-spec` | SDD orchestrator. Runs Q&A, dispatches the three layer architects in parallel, composes the gated spec. |

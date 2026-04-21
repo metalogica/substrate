@@ -191,7 +191,7 @@ so that users receive their payouts without manual intervention.
 When a brief exists at `docs/tasks/ongoing/<feature>/<feature>-brief.md`:
 
 ```
-/architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md
+/substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md
 ```
 
 The `architect-spec` agent will:
@@ -200,7 +200,7 @@ The `architect-spec` agent will:
 3. Engage in Socratic Q&A to clarify ambiguities
 4. Dispatch `domain-architect`, `backend-architect`, and/or `frontend-architect` in parallel based on which layers the brief touches
 5. Generate `<feature>-spec.md` with a Prompt Execution Strategy (phases → steps → verify → gate)
-6. Hand off to `/substrate-execute` in a fresh session for gated execution
+6. Hand off to `/substrate:execute` in a fresh session for gated execution
 
 ---
 

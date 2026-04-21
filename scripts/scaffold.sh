@@ -2,7 +2,7 @@
 # Scaffolds a new substrate project in the current directory.
 # Copies the template tree, installs deps, runs first test.
 #
-# Called by the substrate-init SKILL after Socratic Q&A completes.
+# Called by the substrate:init SKILL after Socratic Q&A completes.
 #
 # Arguments:
 #   $1 — project name (used in package.json, README.md, index.html)
@@ -76,4 +76,4 @@ echo ""
 echo "Next steps:"
 echo "  1. bash \$SUBSTRATE_ROOT/scripts/init-github.sh $PROJECT_NAME"
 echo "  2. Open aistudio.google.com → Build, paste docs/product/ai-studio-prompt.md, download ZIP into /prototype"
-echo "  3. Run /substrate-migrate"
+echo "  3. Run /substrate:migrate"

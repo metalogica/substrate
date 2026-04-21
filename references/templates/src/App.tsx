@@ -7,10 +7,10 @@ export default function App() {
       <p className="mt-4 max-w-xl text-neutral-600">
         Kernel is green. Domain layer + tests are wired. Clerk, Convex, and
         TanStack Router are installed but not yet mounted — run{" "}
-        <code className="font-mono text-sm">/substrate-migrate</code> to bring
+        <code className="font-mono text-sm">/substrate:migrate</code> to bring
         your Gemini AI Studio prototype into{" "}
         <code className="font-mono text-sm">src/</code>, or run{" "}
-        <code className="font-mono text-sm">/quick-spec</code> to start a feature now.
+        <code className="font-mono text-sm">/substrate:quick-spec</code> to start a feature now.
       </p>
     </main>
   );

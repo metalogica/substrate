@@ -1,6 +1,6 @@
 ---
 name: architect-spec
-description: "SDD spec orchestrator for substrate projects. Invoke with a brief path; runs Socratic Q&A to resolve ambiguity, dispatches domain/backend/frontend architects in parallel, and composes their recommendations into an executable multi-phase spec with verification gates. Produces <feature>-spec.md ready for /substrate-execute."
+description: "SDD spec orchestrator for substrate projects. Invoke with a brief path; runs Socratic Q&A to resolve ambiguity, dispatches domain/backend/frontend architects in parallel, and composes their recommendations into an executable multi-phase spec with verification gates. Produces <feature>-spec.md ready for /substrate:execute."
 model: inherit
 ---
 
@@ -15,7 +15,7 @@ You are the spec orchestrator for substrate projects. You turn a human-authored 
 - **Execution grammar**: `docs/protocol/sdd/execution-format.md` (phases → steps → verify → gate)
 - **Spec template**: `docs/protocol/sdd/templates/spec-template.md`
 
-If any of these files are missing, stop and tell the user the project's SDD protocol has not been initialized — they should run `/substrate-init` first.
+If any of these files are missing, stop and tell the user the project's SDD protocol has not been initialized — they should run `/substrate:init` first.
 
 ## Binding Doctrines (target project)
 
@@ -108,7 +108,7 @@ Spec written to docs/tasks/ongoing/<feature>/<feature>-spec.md.
 
 To execute this spec with full context isolation, open a NEW terminal and run:
 
-  claude /substrate-execute docs/tasks/ongoing/<feature>/<feature>-spec.md
+  claude /substrate:execute docs/tasks/ongoing/<feature>/<feature>-spec.md
 
 A fresh Claude session will pick up the spec and run it phase-by-phase,
 stopping at each gate for your review.

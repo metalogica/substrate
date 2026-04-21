@@ -11,7 +11,7 @@
   4. Iterate via chat ("make the buttons coral", "add a filter bar") until the UI feels right
   5. Download the project as a ZIP
   6. Extract the ZIP contents into `/prototype` at the root of this repo
-  7. Return to your terminal and run `/substrate-migrate`
+  7. Return to your terminal and run `/substrate:migrate`
 -->
 
 ---
