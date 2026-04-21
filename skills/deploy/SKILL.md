@@ -212,11 +212,73 @@ Phase B — Custom Domain
 
 **Prerequisite:** Phase B complete — Clerk has verified DNS.
 
-**Idempotency check:**
+**Idempotency + tenant-drift check:**
+
+Phase C has THREE possible states when re-entered. Detect which one before deciding whether to skip:
 
 ```bash
-grep -q "^VITE_CLERK_PUBLISHABLE_KEY=pk_live_" .env.prod 2>/dev/null && echo "PHASE_C_LIKELY_DONE"
+# State 1: .env.prod lacks pk_live_ → Phase C has never run. Proceed normally.
+grep -q "^VITE_CLERK_PUBLISHABLE_KEY=pk_live_" .env.prod 2>/dev/null || echo "PHASE_C_FIRST_RUN"
+
+# State 2: .env.prod has pk_live_ but Convex prod doesn't have matching
+# CLERK_JWT_ISSUER_DOMAIN / CLERK_WEBHOOK_SECRET → TENANT DRIFT. User likely
+# recreated Clerk prod (different tenant ID) or rotated keys.
+
+LOCAL_ISSUER=$(grep "^CLERK_JWT_ISSUER_DOMAIN=" .env.prod 2>/dev/null | cut -d= -f2-)
+LOCAL_WEBHOOK=$(grep "^CLERK_WEBHOOK_SECRET=" .env.prod 2>/dev/null | cut -d= -f2-)
+DEPLOYED_ISSUER=$(npx convex env get CLERK_JWT_ISSUER_DOMAIN --prod 2>/dev/null || true)
+DEPLOYED_WEBHOOK=$(npx convex env get CLERK_WEBHOOK_SECRET --prod 2>/dev/null || true)
+
+if [ -z "$DEPLOYED_ISSUER" ]; then
+  echo "PHASE_C_LOCAL_DONE_PHASE_D_PENDING"
+elif [ "$LOCAL_ISSUER" != "$DEPLOYED_ISSUER" ] || [ "$LOCAL_WEBHOOK" != "$DEPLOYED_WEBHOOK" ]; then
+  echo "DRIFT_DETECTED"
+else
+  echo "PHASE_C_FULLY_IN_SYNC"
+fi
 ```
+
+**Handling each state:**
+
+- **`PHASE_C_FIRST_RUN`** → proceed to step 1 below.
+
+- **`PHASE_C_LOCAL_DONE_PHASE_D_PENDING`** → user ran Phase C earlier but Convex prod doesn't have env set yet (Phase D hasn't completed). Ask: "Phase C appears done locally but prod env isn't synced. Skip to Phase D?" Default: yes.
+
+- **`PHASE_C_FULLY_IN_SYNC`** → `.env.prod` matches Convex prod exactly. Phase C is done. Ask: "Clerk prod already configured. Skip Phase C? [type 'default' to let me decide sensible defaults]". Default: skip.
+
+- **`DRIFT_DETECTED`** → Clerk credentials in `.env.prod` don't match what's deployed. STOP and print this warning verbatim (do NOT prompt to skip Phase C — drift means re-sync is required):
+
+  ```
+  ⚠  TENANT DRIFT DETECTED
+
+  Clerk credentials in .env.prod don't match Convex prod env:
+
+    .env.prod CLERK_JWT_ISSUER_DOMAIN: <LOCAL_ISSUER>
+    Convex prod CLERK_JWT_ISSUER_DOMAIN: <DEPLOYED_ISSUER>
+
+    .env.prod CLERK_WEBHOOK_SECRET:    <whsec_...XXXX>  (last 4 chars)
+    Convex prod CLERK_WEBHOOK_SECRET:  <whsec_...YYYY>  (last 4 chars)
+
+  Probable cause: you regenerated your Clerk prod instance or rotated keys.
+  Tenant ID likely changed, which means FIVE things may need updating:
+
+    1. DKIM CNAMEs (dkim1, dkim2, clkmail, clerk, accounts) — tenant-specific
+       targets change. Re-run Phase B step 4 with Clerk dashboard's new targets.
+    2. Publishable + Secret keys → push to Vercel prod (Phase D step 5).
+    3. JWT Issuer Domain → push to Convex prod (Phase D step 4).
+    4. Webhook Signing Secret → push to Convex prod (Phase D step 4).
+    5. Webhook Endpoint URL in Clerk dashboard — verify it still points to
+       https://<prod-convex>.convex.site/clerk-webhook; re-subscribe to user.*
+       events if the old endpoint was deleted.
+
+  Continue and re-sync Convex prod + Vercel prod? (y / n / default)
+  ```
+
+  On `y` or `default`: skip the "has .env.prod got pk_live_?" re-check and jump to Phase D (which will push the new `.env.prod` values to both backends). The user is responsible for re-running Phase B step 4 (DNS CNAMEs) if the tenant ID changed — the skill prints the recommendation but can't auto-detect what the NEW tenant's CNAME targets should be (those come from Clerk dashboard).
+
+  On `n`: halt. User fixes `.env.prod` manually (typically by pasting back the old values from Clerk dashboard) and re-runs the skill.
+
+### Steps
 
 ### Steps
 
@@ -455,6 +517,7 @@ Next:
 - MUST print each phase's checklist before the gate. Gates are user-review checkpoints.
 - MUST pause at each phase gate for explicit y/n/default approval. Non-negotiable.
 - MUST perform domain-typo confirmation before Clerk prod create (Phase C step 1). This is the single biggest footgun in the flow.
+- MUST perform tenant-drift detection at Phase C start (diff `.env.prod` against `npx convex env get --prod`). If `DRIFT_DETECTED`, print the full re-sync guidance and do NOT offer to skip Phase C — drift means Convex prod is stale.
 - MUST write `.env.prod` in Phase C, read from it in Phase D. `.env.prod` is the source of truth for production env staging.
 - MUST NOT commit `.env.prod` — gitignored via `.env*` rule.
 - MUST NOT push secret keys (Clerk Secret Key, webhook secret, Convex deploy key) to the client bundle.
