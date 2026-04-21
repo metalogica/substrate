@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Metalogica's plugin marketplace. Currently hosts substrate — a full-stack Vite + Convex + Clerk scaffold with DDD, railway-oriented programming, and a testing pyramid.",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "plugins": [
     {

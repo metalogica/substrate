@@ -1,6 +1,6 @@
 {
   "name": "substrate",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Scaffold full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes. Six skills cover the full pipeline — init, migrate, architect-spec, execute, quick-spec, deploy — grounded in Domain-Driven Design, railway-oriented programming, a testing pyramid, and a Gemini AI Studio Build handoff.",
   "author": {
     "name": "rei nova"
