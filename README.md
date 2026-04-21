@@ -1,5 +1,7 @@
 # Substrate
 
+![Logo](./assets/logo-large.png)
+
 **A Claude Code plugin that scaffolds full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes.**
 
 Substrate is a pipeline, not a framework. Six skills walk you from an empty folder to a live deployed app, with architectural doctrines that keep the kernel minimal, the tests honest, and the code reviewable.
