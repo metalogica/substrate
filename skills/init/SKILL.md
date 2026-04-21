@@ -29,9 +29,9 @@ Detect stage by filesystem. If ANY of these exist, STOP and redirect the user in
 
 Run `ls -la` and inspect. Ignore `.git`, `CLAUDE.md`, `.DS_Store`, `README.md` (these are fine to preserve). If anything else is present, stop and ask the user whether to proceed anyway or move to a fresh directory.
 
-### Step 2. Locate the substrate plugin
+### Step 2. Locate the substrate plugin + check CLI prerequisites
 
-`scaffold.sh` lives in the substrate plugin's `scripts/` directory. Resolve `SUBSTRATE_ROOT` by searching known install paths. Run:
+**2a. Locate the substrate plugin.** `scaffold.sh` lives in the substrate plugin's `scripts/` directory. Resolve `SUBSTRATE_ROOT` by searching known install paths:
 
 ```bash
 for candidate in \
@@ -46,6 +46,18 @@ done
 ```
 
 If no path is found, ask the user where the substrate plugin repo lives on their machine (e.g. `~/code/substrate`) and use that as `SUBSTRATE_ROOT`.
+
+**2b. Check CLI prerequisites.** With `SUBSTRATE_ROOT` resolved, run the prerequisites script:
+
+```bash
+bash "$SUBSTRATE_ROOT/scripts/prerequisites.sh"
+```
+
+The script checks for `git`, `node` (≥ 20), `pnpm` (≥ 10), `npx`, and `gh` (+ auth). macOS + Linux only.
+
+If the script exits non-zero (critical failure — missing node or pnpm, wrong version, etc.), STOP and surface the output to the user. Do NOT proceed to scaffolding until they install the missing tools — `scaffold.sh` will fail in step 6 otherwise, wasting their time.
+
+Warnings (yellow ⚠) are OK at this stage. `gh` + `gh auth` are warn-only because they're only needed at step 8 (GitHub push), which is optional.
 
 ### Step 3. Socratic Q&A — project basics
 
@@ -176,3 +188,4 @@ Then show the contents of `docs/product/ai-studio-prompt.md` in-line so the user
 - SHOULD keep Q&A tight — 1–2 questions per turn, conversational, probing when answers are vague.
 - SHOULD skip jargon (no "Convex mutation", no "TanStack Router route") unless the user signals comfort with it.
 - MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on every Socratic question. When the user picks `default`, choose a reasonable value and summarize the defaults chosen before scaffolding so the user can course-correct.
+- MUST run `scripts/prerequisites.sh` at step 2b and halt on non-zero exit. Critical tools missing = `scaffold.sh` will fail later; fail fast and point the user at the fix instead. Warnings are informational only and must not halt.
