@@ -15,8 +15,6 @@
 
 **A Claude Code plugin that scaffolds full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes.**
 
-A virtual framework of six skills walk you from an empty folder to a live deployed app, with architectural doctrines that keep the kernel minimal, the tests honest, and the code reviewable.
-
 ## Principles
 
 - **Spec-Driven Development** — briefs become specs, specs become gated executions.
