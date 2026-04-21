@@ -2,6 +2,8 @@
 
 ![Logo](./assets/logo-large.png)
 
+**A Claude Code plugin that scaffolds full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes.**
+
 ```
 # step 1
 /plugin marketplace add metalogica/substrate
@@ -12,8 +14,6 @@
 
 # Cook 🧑‍🍳🔥
 ```
-
-**A Claude Code plugin that scaffolds full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes.**
 
 ## Principles
 
