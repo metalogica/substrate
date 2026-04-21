@@ -4,10 +4,14 @@
     "name": "metalogica",
     "url": "https://github.com/metalogica"
   },
+  "metadata": {
+    "description": "Metalogica's plugin marketplace. Currently hosts substrate — a full-stack Vite + Convex + Clerk scaffold with DDD, railway-oriented programming, and a testing pyramid.",
+    "version": "0.2.0"
+  },
   "plugins": [
     {
       "name": "substrate",
-      "source": ".",
+      "source": "./",
       "description": "Scaffold full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes. Six skills cover the full pipeline — init, migrate, architect-spec, execute, quick-spec, deploy — grounded in Domain-Driven Design, railway-oriented programming, a testing pyramid, and a Gemini AI Studio Build handoff.",
       "homepage": "https://github.com/metalogica/substrate",
       "license": "MIT",
