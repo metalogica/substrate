@@ -209,7 +209,9 @@ When the user says continue:
 
    The plugin's first run generates `src/routeTree.gen.ts` (already in the scaffold's `.gitignore`).
 
-3. **Update `src/main.tsx`** to wire the provider tree, gated on env vars being present. If either `VITE_CLERK_PUBLISHABLE_KEY` or `VITE_CONVEX_URL` is missing, render a "Setup required" screen INSTEAD of calling `ClerkProvider` (which throws on empty key). This is load-bearing because step 8 auto-launches the dev server — the user WILL see this screen until `/substrate:deploy` wires Clerk.
+3. **Update `src/main.tsx`** to wire the provider tree, gated on env vars being present. If either `VITE_CLERK_PUBLISHABLE_KEY` or `VITE_CONVEX_URL` is missing, render the `<SetupRequired />` component INSTEAD of calling `ClerkProvider` (which throws on empty key). This is load-bearing because the user runs `pnpm app:dev` post-migration — they WILL see this screen until `/substrate:deploy` wires Clerk.
+
+   `SetupRequired` ships in the scaffold at `src/components/SetupRequired.tsx`. Do NOT rewrite it; just import and render.
 
    ```tsx
    import React from "react";
@@ -219,6 +221,7 @@ When the user says continue:
    import { ConvexReactClient } from "convex/react";
    import { RouterProvider } from "@tanstack/react-router";
    import { router } from "./router";
+   import { SetupRequired } from "./components/SetupRequired";
    import "./index.css";
 
    const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -226,20 +229,7 @@ When the user says continue:
    const root = ReactDOM.createRoot(document.getElementById("root")!);
 
    if (!clerkKey || !convexUrl) {
-     root.render(
-       <main className="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center">
-         <h1 className="text-4xl font-semibold">Setup required</h1>
-         <p className="mt-4 max-w-xl">
-           Missing env vars:{" "}
-           {!clerkKey && <code>VITE_CLERK_PUBLISHABLE_KEY</code>}
-           {!clerkKey && !convexUrl && ", "}
-           {!convexUrl && <code>VITE_CONVEX_URL</code>}
-         </p>
-         <p className="mt-4 max-w-xl">
-           Run <code>/substrate:deploy</code> to configure Clerk and Convex.
-         </p>
-       </main>
-     );
+     root.render(<SetupRequired />);
    } else {
      const convex = new ConvexReactClient(convexUrl);
      root.render(
