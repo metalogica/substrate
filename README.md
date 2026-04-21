@@ -2,9 +2,20 @@
 
 ![Logo](./assets/logo-large.png)
 
+```
+# step 1
+/plugin marketplace add metalogica/substrate
+# step 2
+/plugin install substrate@metalogica
+# step 3
+/reload-plugins
+
+# Cook 🧑‍🍳🔥
+```
+
 **A Claude Code plugin that scaffolds full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes.**
 
-Substrate is a pipeline, not a framework. Six skills walk you from an empty folder to a live deployed app, with architectural doctrines that keep the kernel minimal, the tests honest, and the code reviewable.
+A virtual framework of six skills walk you from an empty folder to a live deployed app, with architectural doctrines that keep the kernel minimal, the tests honest, and the code reviewable.
 
 ## Principles
 
@@ -26,24 +37,50 @@ Substrate is a pipeline, not a framework. Six skills walk you from an empty fold
 
 ## Install
 
-In Claude Code, add the marketplace and install the plugin:
-
-```
-/plugin marketplace add metalogica/substrate
-/plugin install substrate@metalogica
-```
-
-Skills and agents are auto-discovered. All six skills will appear under `/substrate:*`.
+See the commands at the top of this README. After install, all six skills appear under `/substrate:*`.
 
 ### Development
 
-To iterate on the plugin itself, symlink the repo into your Claude Code plugins directory:
+To iterate on the plugin itself without pushing a release for every change, use the local-path marketplace + cache-symlink workflow.
 
-```bash
-ln -s /path/to/local/substrate ~/.claude/plugins/substrate
+**One-time setup.** Clone this repo, then in Claude Code:
+
+```
+/plugin marketplace add /absolute/path/to/your/substrate
+/plugin install substrate@metalogica
+/reload-plugins
 ```
 
-Edits are picked up without restarting the Claude Code session.
+This registers your local clone as a marketplace and installs substrate from it. Claude Code copies the plugin into `~/.claude/plugins/cache/metalogica/substrate/<version>/`.
+
+**Enable hot reload.** Swap the cached copy for a symlink back to your source repo:
+
+```bash
+./scripts/dev-link.sh
+```
+
+Now any edit in the source repo is live. In any Claude Code session — including ones open in unrelated projects — run `/reload-plugins` to pick up changes. Switching branches (`git checkout feature/foo`) is instantly reflected too.
+
+**Before cutting a release.** Restore a normal copied install so the release is tested against a clean tree:
+
+```bash
+./scripts/dev-unlink.sh
+```
+
+This removes the symlink, reinstalls from the marketplace, and leaves you pointing at the version you're about to release.
+
+**Two-track model:**
+
+| Track | Marketplace source | Purpose |
+|---|---|---|
+| Dev (this machine) | local path → your substrate clone | hot reload, no push-to-test |
+| Release (everyone else) | `metalogica/substrate` on GitHub | users install stable tagged versions |
+
+**Rules for this loop to stay healthy:**
+
+- Don't bump `.claude-plugin/plugin.json#version` on feature branches. The cache path is keyed by that version; bumping mid-dev orphans the symlink.
+- If the dev symlink ever gets overwritten by an auto-update, just re-run `./scripts/dev-link.sh`.
+- A broken feature branch = a broken plugin in your test session. That's the intended behavior (you're testing WIP); check out `main` if you need a known-good state.
 
 ## The pipeline
 

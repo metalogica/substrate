@@ -34,17 +34,42 @@ The plugin exposes:
 
 ### Production (plugin install)
 
-Clone or symlink the repo into `~/.claude/plugins/substrate/`. Skills and agents are picked up automatically.
+End users install from the public marketplace:
 
-### Development (fast iteration)
-
-Symlink the whole repo into your plugins path, then edit in place. Changes are picked up without restarting the Claude Code session:
-
-```bash
-ln -s /path/to/this/repo ~/.claude/plugins/substrate
+```
+/plugin marketplace add metalogica/substrate
+/plugin install substrate@metalogica
+/reload-plugins
 ```
 
-To test in isolation, `cd` into a fresh sandbox directory and invoke `/substrate:init`. The skills discover `SUBSTRATE_ROOT` via a path-search helper (see `skills/init/SKILL.md` step 2).
+Claude Code v2.1.114+ uses a marketplace-only model — it no longer auto-discovers directories dropped into `~/.claude/plugins/<name>/`. The old `ln -s /path/to/repo ~/.claude/plugins/substrate` workflow does not work.
+
+### Development (fast iteration via cache-symlink)
+
+To edit substrate and see changes hot-reload in every Claude Code session without pushing a release:
+
+1. Register your local clone as a marketplace and install:
+   ```
+   /plugin marketplace add /absolute/path/to/your/clone/of/substrate
+   /plugin install substrate@metalogica
+   /reload-plugins
+   ```
+2. Swap the cached copy for a symlink back to the source repo:
+   ```bash
+   ./scripts/dev-link.sh
+   ```
+
+Every edit, branch switch, or uncommitted change in the source repo is now visible after `/reload-plugins` in any session — including sessions opened in unrelated projects.
+
+Before cutting a release, restore a normal copied install so the release is validated against a clean tree:
+
+```bash
+./scripts/dev-unlink.sh
+```
+
+See the README's "Development" section for the full flow and the guardrails (don't bump `plugin.json#version` on feature branches; use the GitHub marketplace `metalogica/substrate` for release, local-path marketplace for dev).
+
+To test scaffolding in isolation, `cd` into a fresh sandbox directory and invoke `/substrate:init`. The skills discover `SUBSTRATE_ROOT` via a path-search helper (see `skills/init/SKILL.md` step 2).
 
 ## Repo layout
 
