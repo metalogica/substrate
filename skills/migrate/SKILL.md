@@ -39,17 +39,34 @@ Verify `src/App.tsx` still contains the string `"Substrate project initialized"`
 
 ### Step 2. Load the prototype
 
-Map the prototype's shape before dispatching architects. Use Glob + Read:
+**First, detect the prototype root.** The Gemini ZIP extracts with a project-named wrapper folder (e.g. `curd-connect/`), and `/substrate:init` tells users to drag that whole folder into `/prototype/`. So the expected layout is **nested**:
 
-- `prototype/src/**/*.tsx` — components + pages
-- `prototype/src/**/*.ts` — utilities, types, mock data
-- `prototype/package.json` — reveals which libs Gemini chose (router, state)
-- `prototype/src/App.tsx` — entry / layout
-- `prototype/src/main.tsx` — bootstrapping (usually trivial)
+```
+prototype/<project-name>/package.json
+prototype/<project-name>/src/
+prototype/<project-name>/vite.config.ts
+```
+
+Resolve `PROTOTYPE_ROOT` via this logic:
+
+1. If `prototype/package.json` exists → the prototype is **flat**. `PROTOTYPE_ROOT=prototype`.
+2. Else if `prototype/` contains exactly ONE subdirectory (excluding `.gitkeep` / dotfiles) and that subdirectory has `package.json` → the prototype is **nested**. `PROTOTYPE_ROOT=prototype/<subdir>`.
+3. Else if `prototype/` is empty (still just `.gitkeep`) → the user hasn't extracted the Gemini ZIP yet. Stop and tell them.
+4. Else → ambiguous (multiple candidate subdirs or no `package.json` anywhere). Stop and ask the user which path is the prototype root.
+
+Use `$PROTOTYPE_ROOT` everywhere below instead of hardcoded `prototype/`.
+
+Then map the prototype's shape before dispatching architects. Use Glob + Read:
+
+- `$PROTOTYPE_ROOT/src/**/*.tsx` — components + pages
+- `$PROTOTYPE_ROOT/src/**/*.ts` — utilities, types, mock data
+- `$PROTOTYPE_ROOT/package.json` — reveals which libs Gemini chose (router, state)
+- `$PROTOTYPE_ROOT/src/App.tsx` — entry / layout
+- `$PROTOTYPE_ROOT/src/main.tsx` — bootstrapping (usually trivial)
 - Any `types.ts` / `types/*.ts` — data shapes
 - Any file matching `*mock*` / `*seed*` / `*sample*` / `data.ts` — mock data sources
 
-You don't need to read every component in full — sample them to understand structure.
+You don't need to read every component in full — sample them to understand structure. Pass the resolved `$PROTOTYPE_ROOT` through to the architect dispatches in step 3 so they look at the correct path.
 
 ### Step 3. Dispatch architects in parallel
 

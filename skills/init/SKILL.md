@@ -153,7 +153,13 @@ Next steps:
   3. Paste into the Build description box.
   4. Iterate in the AI Studio UI until the look is right.
   5. Download the project as a ZIP.
-  6. Extract the ZIP contents into /prototype at this repo's root.
+  6. Unzip it. You'll get a folder named after your product (e.g. `<project-slug>/`).
+     Drag that folder INTO `/prototype/` (which already exists in this repo).
+     Final layout should look like:
+         /prototype/<project-slug>/package.json
+         /prototype/<project-slug>/src/
+         /prototype/<project-slug>/vite.config.ts
+         ...
   7. Return here and run /substrate:migrate.
 ```
 
