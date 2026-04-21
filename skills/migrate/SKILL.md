@@ -310,34 +310,84 @@ This ensures migration-added deps (svix for Clerk webhooks, Gemini-introduced li
 
 Do NOT auto-launch `pnpm app:dev` — background dev servers linger after the Claude session ends, obscure Vite logs, collide on port 5173 across repeated runs, and surprise the user. Let them start the server themselves.
 
-### Step 9. Handoff
+### Step 9. Clerk dev setup
 
-Print this summary with a copy-pasteable NEXT STEPS box:
+The migration wired `src/main.tsx` with an env-guard that renders `<SetupRequired />` when `VITE_CLERK_PUBLISHABLE_KEY` / `VITE_CONVEX_URL` are missing. Fill them in now so the local app actually works.
+
+First, check whether Clerk is already configured (user may have run setup earlier):
+
+```bash
+grep -q "VITE_CLERK_PUBLISHABLE_KEY=.\+" .env.local 2>/dev/null && echo "CLERK_ALREADY_SET" || echo "CLERK_NOT_SET"
+```
+
+If `CLERK_ALREADY_SET`, skip to step 10. If `CLERK_NOT_SET`, invoke the interactive script:
+
+```bash
+bash "$SUBSTRATE_ROOT/scripts/setup-clerk.sh"
+```
+
+The script walks the user through:
+
+- Creating a Clerk **development** application at `https://dashboard.clerk.com/`
+- Enabling Email (code / magic link) + optional Google sign-in (Google uses Clerk's shared OAuth in dev — zero GCP setup)
+- Creating a "Convex" JWT template in Clerk
+- Creating a Clerk → Convex webhook endpoint (URL: `https://<your-convex-deployment>.convex.site/clerk-webhook`, events: `user.created`, `user.updated`, `user.deleted`)
+- Collecting Publishable Key, Secret Key, JWT Issuer Domain, Webhook Signing Secret
+- Validating the webhook secret format (`^whsec_`) before writing anything — common paste error is the URL
+- Writing all four values to `.env.local`
+- Running `npx convex env set` for `CLERK_JWT_ISSUER_DOMAIN` and `CLERK_WEBHOOK_SECRET`
+
+If the script exits non-zero, halt and surface the error. `npx convex dev` must still be running from step 5c for the Convex env-set commands to succeed — if they skip with "run convex dev first", restart it in another terminal and re-run setup-clerk.sh.
+
+### Step 10. Local smoke test
+
+Tell the user:
 
 ```
-✔ Migration complete.
+Sign-in check — start the app in a NEW terminal (keep pnpm convex:dev
+running from earlier):
 
-  Domain: <N> files, <X> tests passing
-  Backend: <M> functions across <K> tables
-  Frontend: <P> components migrated, routes wired via TanStack Router
-  Hooks: <R> bridges to Convex
-  Prototype: archived to prototype-archive/
+  pnpm app:dev
 
-🚀 NEXT STEPS — run these in two terminals:
+Open http://localhost:5173 and sign in via Clerk (Email or Google).
+You should land on an authenticated page with no console errors.
 
-  Terminal 1:  pnpm convex:dev     # if not already running
-  Terminal 2:  pnpm app:dev
+Did sign-in work end-to-end? (y / n) [type 'default' to assume yes]
+```
 
-Then open http://localhost:5173.
+Wait for explicit confirmation. Common failures:
 
-Because Clerk + Convex env vars aren't configured yet, you'll see a
-"Setup required" screen — that's expected. The app IS running; it's
-just waiting for credentials.
+- `auth.config.ts` references wrong `CLERK_JWT_ISSUER_DOMAIN` → re-run setup-clerk.sh
+- `.env.local` was just written but Vite still shows `SetupRequired` → Vite normally auto-reloads on env changes; if stuck, have user `ctrl+c` and `pnpm app:dev` again
+- Sign-in redirects to `/sign-up/verify-email-address` and 404s → ensure `<SignIn/>` / `<SignUp/>` use `routing="virtual"` (see `docs/doctrine/frontend-doctrine.md` §4.2a)
+- No user row in Convex after sign-in → webhook not firing; check the endpoint URL + signing secret in Clerk dashboard match `.env.local`
 
-Next skills:
-  - /substrate:deploy to wire Clerk + Vercel and see real sign-in
+If the user types `default`, proceed as if sign-in worked — they can re-run migrate or fix Clerk directly later.
+
+### Step 11. Handoff
+
+Print this summary:
+
+```
+✔ Migration complete. Dev environment fully working.
+
+  Domain:     <N> files, <X> tests passing
+  Backend:    <M> functions across <K> tables
+  Frontend:   <P> components migrated, routes wired via TanStack Router
+  Hooks:      <R> bridges to Convex
+  Clerk dev:  connected, sign-in verified
+  Convex dev: env vars set
+  Prototype:  archived to prototype-archive/
+
+🌐 App live at: http://localhost:5173
+
+Next:
+  - /substrate:deploy to take this to production (custom domain +
+    prod Clerk + prod Convex + prod env split)
   - OR /substrate:quick-spec to add features before deploying
   - OR /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a multi-phase feature
+
+Keep `pnpm convex:dev` + `pnpm app:dev` running in two terminals while you iterate.
 ```
 
 ## Constraints
@@ -353,6 +403,9 @@ Next skills:
 - MUST archive `prototype/` rather than deleting outright (step 5f) — the user may want to reference it.
 - MUST commit at step 7 so the migration is a single revertable unit.
 - MUST auto-run `pnpm install` at step 8 so the NEXT STEPS commands work cleanly on first try.
-- MUST NOT auto-launch `pnpm app:dev`. Background dev servers cause process-management issues (lingering after Claude exits, port collisions, hidden logs). Print the commands in a NEXT STEPS box so the user retains control.
+- MUST NOT auto-launch `pnpm app:dev`. Background dev servers cause process-management issues (lingering after Claude exits, port collisions, hidden logs). Print the commands and let the user retain control.
+- MUST invoke `setup-clerk.sh` at step 9 (unless `.env.local` already has `VITE_CLERK_PUBLISHABLE_KEY` set — in which case Clerk was configured earlier and we skip). Dev Clerk setup belongs to stage 2, not stage 3.
+- MUST pause at step 10 for explicit user confirmation that sign-in works locally. Accept `default` as assume-yes so the flow isn't blocked by a user who wants to debug sign-in issues out-of-band.
 - MUST write `src/main.tsx` with an env-guard that renders a "Setup required" screen when Clerk/Convex env vars are missing, rather than calling `ClerkProvider` with an undefined key (which crashes the app).
-- SHOULD narrate progress ("architects dispatched", "domain layer written", "verifying", "installing deps") — the user is watching a long operation and needs to see liveness.
+- SHOULD narrate progress ("architects dispatched", "domain layer written", "verifying", "installing deps", "setting up Clerk dev") — the user is watching a long operation and needs to see liveness.
+- Stage-2 end state is a **fully working local app** with Clerk sign-in functional. "Green compile + tests" alone is no longer sufficient.
