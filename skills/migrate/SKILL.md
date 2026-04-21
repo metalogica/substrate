@@ -306,30 +306,24 @@ git commit -m "feat: migrate Gemini prototype into substrate kernel
 
 Do NOT push. The user decides when to push.
 
-### Step 8. Install deps + launch dev server
+### Step 8. Install deps
 
-After committing, pick up any deps added during migration and launch the app so the user sees it live — they shouldn't have to remember two commands.
-
-Run `pnpm install` (foreground, finite). This ensures any deps added during migration (svix for Clerk webhooks, Gemini-introduced libs like date-fns or lucide-react, etc.) are actually on disk:
+After committing, pick up any deps added during migration. Run `pnpm install` (foreground, finite) so the user's dev server starts cleanly in step 9:
 
 ```bash
 pnpm install
 ```
 
-Then start Vite in the **background** via the Bash tool's `run_in_background: true` option. Capture the shell ID in case the user needs logs later:
+This ensures migration-added deps (svix for Clerk webhooks, Gemini-introduced libs like date-fns or lucide-react) are on disk.
 
-```bash
-pnpm app:dev
-```
-
-`pnpm convex:dev` is NOT auto-started — it should already be running from step 5c. If it isn't, tell the user to start it in another terminal.
+Do NOT auto-launch `pnpm app:dev` — background dev servers linger after the Claude session ends, obscure Vite logs, collide on port 5173 across repeated runs, and surprise the user. Let them start the server themselves.
 
 ### Step 9. Handoff
 
-Print this summary. Include the localhost URL explicitly and warn about the setup screen so the user isn't surprised:
+Print this summary with a copy-pasteable NEXT STEPS box:
 
 ```
-✔ Migration complete. App is running.
+✔ Migration complete.
 
   Domain: <N> files, <X> tests passing
   Backend: <M> functions across <K> tables
@@ -337,18 +331,21 @@ Print this summary. Include the localhost URL explicitly and warn about the setu
   Hooks: <R> bridges to Convex
   Prototype: archived to prototype-archive/
 
-🌐 Live at: http://localhost:5173
+🚀 NEXT STEPS — run these in two terminals:
+
+  Terminal 1:  pnpm convex:dev     # if not already running
+  Terminal 2:  pnpm app:dev
+
+Then open http://localhost:5173.
 
 Because Clerk + Convex env vars aren't configured yet, you'll see a
-"Setup required" screen — that's expected. The app is running; it's
+"Setup required" screen — that's expected. The app IS running; it's
 just waiting for credentials.
 
-Next:
-  - Run /substrate:deploy to wire Clerk + Vercel and see real sign-in
-  - OR run /substrate:quick-spec to add features before deploying
-  - OR run /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a multi-phase feature
-
-Keep `pnpm convex:dev` running in another terminal to stay in sync.
+Next skills:
+  - /substrate:deploy to wire Clerk + Vercel and see real sign-in
+  - OR /substrate:quick-spec to add features before deploying
+  - OR /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a multi-phase feature
 ```
 
 ## Constraints
@@ -363,6 +360,7 @@ Keep `pnpm convex:dev` running in another terminal to stay in sync.
 - MUST NOT invent data shapes not present in the prototype. If a field is ambiguous (e.g. optional vs required), ask the user.
 - MUST archive `prototype/` rather than deleting outright (step 5f) — the user may want to reference it.
 - MUST commit at step 7 so the migration is a single revertable unit.
-- MUST auto-run `pnpm install` + launch `pnpm app:dev` in the background at step 8 so the user lands on a live localhost URL without typing commands.
+- MUST auto-run `pnpm install` at step 8 so the NEXT STEPS commands work cleanly on first try.
+- MUST NOT auto-launch `pnpm app:dev`. Background dev servers cause process-management issues (lingering after Claude exits, port collisions, hidden logs). Print the commands in a NEXT STEPS box so the user retains control.
 - MUST write `src/main.tsx` with an env-guard that renders a "Setup required" screen when Clerk/Convex env vars are missing, rather than calling `ClerkProvider` with an undefined key (which crashes the app).
-- SHOULD narrate progress ("architects dispatched", "domain layer written", "verifying", "dev server started on :5173") — the user is watching a long operation and needs to see liveness.
+- SHOULD narrate progress ("architects dispatched", "domain layer written", "verifying", "installing deps") — the user is watching a long operation and needs to see liveness.
