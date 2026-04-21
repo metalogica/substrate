@@ -1,0 +1,11 @@
+tbd_format: f03
+tbd_version: 0.1.26
+display:
+  id_prefix: sub
+sync:
+  branch: tbd-sync
+  remote: origin
+settings:
+  auto_sync: false
+  doc_auto_sync_hours: 24
+  use_gh_cli: true
