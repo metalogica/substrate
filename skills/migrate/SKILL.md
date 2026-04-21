@@ -209,17 +209,50 @@ When the user says continue:
 
    The plugin's first run generates `src/routeTree.gen.ts` (already in the scaffold's `.gitignore`).
 
-3. **Update `src/main.tsx`** to wire the provider tree:
+3. **Update `src/main.tsx`** to wire the provider tree, gated on env vars being present. If either `VITE_CLERK_PUBLISHABLE_KEY` or `VITE_CONVEX_URL` is missing, render a "Setup required" screen INSTEAD of calling `ClerkProvider` (which throws on empty key). This is load-bearing because step 8 auto-launches the dev server — the user WILL see this screen until `/substrate:deploy` wires Clerk.
 
    ```tsx
-   <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
-     <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-       <RouterProvider router={router} />
-     </ConvexProviderWithClerk>
-   </ClerkProvider>
-   ```
+   import React from "react";
+   import ReactDOM from "react-dom/client";
+   import { ClerkProvider, useAuth } from "@clerk/clerk-react";
+   import { ConvexProviderWithClerk } from "convex/react-clerk";
+   import { ConvexReactClient } from "convex/react";
+   import { RouterProvider } from "@tanstack/react-router";
+   import { router } from "./router";
+   import "./index.css";
 
-   Env vars may be blank at this stage — providers mount, auth fails at runtime. That's fixed by `/substrate:deploy`.
+   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+   const convexUrl = import.meta.env.VITE_CONVEX_URL;
+   const root = ReactDOM.createRoot(document.getElementById("root")!);
+
+   if (!clerkKey || !convexUrl) {
+     root.render(
+       <main className="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center">
+         <h1 className="text-4xl font-semibold">Setup required</h1>
+         <p className="mt-4 max-w-xl">
+           Missing env vars:{" "}
+           {!clerkKey && <code>VITE_CLERK_PUBLISHABLE_KEY</code>}
+           {!clerkKey && !convexUrl && ", "}
+           {!convexUrl && <code>VITE_CONVEX_URL</code>}
+         </p>
+         <p className="mt-4 max-w-xl">
+           Run <code>/substrate:deploy</code> to configure Clerk and Convex.
+         </p>
+       </main>
+     );
+   } else {
+     const convex = new ConvexReactClient(convexUrl);
+     root.render(
+       <React.StrictMode>
+         <ClerkProvider publishableKey={clerkKey}>
+           <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+             <RouterProvider router={router} />
+           </ConvexProviderWithClerk>
+         </ClerkProvider>
+       </React.StrictMode>
+     );
+   }
+   ```
 
 4. **Delete `src/App.tsx`.** Route composition now lives under `src/routes/` (`__root.tsx` + per-page files); the top-level `App.tsx` placeholder is obsolete.
 
@@ -273,12 +306,30 @@ git commit -m "feat: migrate Gemini prototype into substrate kernel
 
 Do NOT push. The user decides when to push.
 
-### Step 8. Handoff
+### Step 8. Install deps + launch dev server
 
-Print next steps:
+After committing, pick up any deps added during migration and launch the app so the user sees it live — they shouldn't have to remember two commands.
+
+Run `pnpm install` (foreground, finite). This ensures any deps added during migration (svix for Clerk webhooks, Gemini-introduced libs like date-fns or lucide-react, etc.) are actually on disk:
+
+```bash
+pnpm install
+```
+
+Then start Vite in the **background** via the Bash tool's `run_in_background: true` option. Capture the shell ID in case the user needs logs later:
+
+```bash
+pnpm app:dev
+```
+
+`pnpm convex:dev` is NOT auto-started — it should already be running from step 5c. If it isn't, tell the user to start it in another terminal.
+
+### Step 9. Handoff
+
+Print this summary. Include the localhost URL explicitly and warn about the setup screen so the user isn't surprised:
 
 ```
-✔ Migration complete.
+✔ Migration complete. App is running.
 
   Domain: <N> files, <X> tests passing
   Backend: <M> functions across <K> tables
@@ -286,12 +337,18 @@ Print next steps:
   Hooks: <R> bridges to Convex
   Prototype: archived to prototype-archive/
 
-Next:
-  - Run /substrate:deploy to set up Clerk + Vercel + first deploy
-  - OR run /substrate:quick-spec to add more features before deploying
-  - OR run /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a large multi-phase feature
+🌐 Live at: http://localhost:5173
 
-Keep `npx convex dev` running in another terminal to stay in sync while you iterate.
+Because Clerk + Convex env vars aren't configured yet, you'll see a
+"Setup required" screen — that's expected. The app is running; it's
+just waiting for credentials.
+
+Next:
+  - Run /substrate:deploy to wire Clerk + Vercel and see real sign-in
+  - OR run /substrate:quick-spec to add features before deploying
+  - OR run /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md for a multi-phase feature
+
+Keep `pnpm convex:dev` running in another terminal to stay in sync.
 ```
 
 ## Constraints
@@ -306,4 +363,6 @@ Keep `npx convex dev` running in another terminal to stay in sync while you iter
 - MUST NOT invent data shapes not present in the prototype. If a field is ambiguous (e.g. optional vs required), ask the user.
 - MUST archive `prototype/` rather than deleting outright (step 5f) — the user may want to reference it.
 - MUST commit at step 7 so the migration is a single revertable unit.
-- SHOULD narrate progress ("architects dispatched", "domain layer written", "verifying") — the user is watching a long operation and needs to see liveness.
+- MUST auto-run `pnpm install` + launch `pnpm app:dev` in the background at step 8 so the user lands on a live localhost URL without typing commands.
+- MUST write `src/main.tsx` with an env-guard that renders a "Setup required" screen when Clerk/Convex env vars are missing, rather than calling `ClerkProvider` with an undefined key (which crashes the app).
+- SHOULD narrate progress ("architects dispatched", "domain layer written", "verifying", "dev server started on :5173") — the user is watching a long operation and needs to see liveness.
