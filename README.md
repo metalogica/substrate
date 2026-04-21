@@ -26,19 +26,24 @@ Substrate is a pipeline, not a framework. Six skills walk you from an empty fold
 
 ## Install
 
-Clone or symlink the repo into your Claude Code plugins directory:
+In Claude Code, add the marketplace and install the plugin:
 
-```bash
-git clone https://github.com/<you>/substrate ~/.claude/plugins/substrate
+```
+/plugin marketplace add metalogica/substrate
+/plugin install substrate@metalogica
 ```
 
-Or for development:
+Skills and agents are auto-discovered. All six skills will appear under `/substrate:*`.
+
+### Development
+
+To iterate on the plugin itself, symlink the repo into your Claude Code plugins directory:
 
 ```bash
 ln -s /path/to/local/substrate ~/.claude/plugins/substrate
 ```
 
-Skills and agents are auto-discovered.
+Edits are picked up without restarting the Claude Code session.
 
 ## The pipeline
 
