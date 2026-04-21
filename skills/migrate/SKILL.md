@@ -244,7 +244,9 @@ When the user says continue:
    }
    ```
 
-4. **Delete `src/App.tsx`.** Route composition now lives under `src/routes/` (`__root.tsx` + per-page files); the top-level `App.tsx` placeholder is obsolete.
+4. **Wire Clerk `<SignIn/>` and `<SignUp/>` routes with `routing="virtual"`.** When you create `src/routes/sign-in.tsx` and `src/routes/sign-up.tsx`, use `routing="virtual"` (NOT the default `routing="path"`). Clerk's path routing navigates mid-flow to `/sign-up/verify-email-address`, which 404s without splat routes; virtual routing keeps the multi-step flow in memory. See `docs/doctrine/frontend-doctrine.md` §4.2a.
+
+5. **Delete `src/App.tsx`.** Route composition now lives under `src/routes/` (`__root.tsx` + per-page files); the top-level `App.tsx` placeholder is obsolete.
 
 Run:
 

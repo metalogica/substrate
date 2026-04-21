@@ -170,6 +170,36 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
+### 4.2a Clerk sign-in / sign-up routes (`routing="virtual"`)
+
+Substrate uses TanStack Router's file-based routing. Clerk's default `<SignIn/>` / `<SignUp/>` mount with `routing="path"`, which navigates mid-flow to sub-paths like `/sign-up/verify-email-address`. Without matching file routes or a splat route, the nested step 404s.
+
+MUST use `routing="virtual"` for both components. Clerk handles the multi-step flow in memory; no sub-routes needed.
+
+```tsx
+// src/routes/sign-in.tsx
+import { SignIn } from "@clerk/clerk-react";
+import { createFileRoute } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/sign-in")({
+  component: () => <SignIn routing="virtual" />,
+});
+```
+
+```tsx
+// src/routes/sign-up.tsx
+import { SignUp } from "@clerk/clerk-react";
+import { createFileRoute } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/sign-up")({
+  component: () => <SignUp routing="virtual" />,
+});
+```
+
+Rules:
+- MUST set `routing="virtual"` on `<SignIn/>` and `<SignUp/>` unless you've explicitly wired splat routes.
+- MUST NOT rely on Clerk's default (`routing="path"`) — it breaks TanStack file-based routing.
+
 ### 4.2 Auth Guard
 
 ```tsx

@@ -61,13 +61,38 @@ bash "$SUBSTRATE_ROOT/scripts/setup-clerk.sh"
 The script walks the user through:
 
 - Creating a Clerk application at `https://dashboard.clerk.com/`.
-- Enabling Email + Google sign-in (Google works in development with Clerk's shared OAuth credentials — **no Google Cloud Console required**).
+- Enabling **Email (code / magic link)** as the default sign-in method — no Google Cloud setup, works in both dev and prod.
+- Enabling **Google sign-in** (optional). For DEV Clerk instances Google uses Clerk's shared OAuth credentials — zero setup. For PROD Clerk instances you must bring your own Google Cloud OAuth 2.0 Client ID (see step 2b below).
 - Creating a "Convex" JWT template in Clerk's JWT Templates section.
-- Collecting the Publishable Key, Secret Key, and JWT Issuer Domain.
-- Writing them to `.env.local`.
-- Running `npx convex env set CLERK_JWT_ISSUER_DOMAIN <...>`.
+- Creating a Clerk → Convex webhook endpoint (URL: `https://<your-convex-deployment>.convex.site/clerk-webhook`; events: `user.created`, `user.updated`, `user.deleted`).
+- Collecting Publishable Key, Secret Key, JWT Issuer Domain, AND Webhook Signing Secret (`whsec_...`).
+- Validating the webhook secret format before writing anything — a common paste error is the webhook URL, which only fails later as an opaque `Base64Coder: incorrect characters` at runtime.
+- Writing all four values to `.env.local`.
+- Running `npx convex env set CLERK_JWT_ISSUER_DOMAIN` + `CLERK_WEBHOOK_SECRET`.
 
 If the script exits non-zero, stop and surface the error.
+
+### Step 2b. Google OAuth for PROD Clerk instances (skip for DEV)
+
+Only applies when the user has a production Clerk instance (`pk_live_...`). Dev instances (`pk_test_...`) skip this entirely — Clerk's shared OAuth handles Google sign-in out of the box.
+
+Prod Google OAuth flow:
+
+1. Open Google Cloud Console → https://console.cloud.google.com/apis/credentials
+2. Create OAuth consent screen if not already done (scope: email + profile).
+3. Create OAuth 2.0 Client ID → type: **Web application**.
+4. Authorized redirect URI — paste exactly:
+
+   ```
+   https://clerk.<your-domain>/v1/oauth_callback
+   ```
+
+   Replace `<your-domain>` with your Clerk production domain (e.g. `curd-connect.xyz`).
+
+5. Copy the Client ID + Client Secret.
+6. In Clerk dashboard → User & Authentication → Social Connections → Google → toggle to **custom credentials** and paste the values.
+
+This only needs to happen once per production Clerk instance. Tenant-ID drift warning: if you recreate the Clerk prod instance (different tenant ID), the redirect URI and all DKIM CNAMEs change — you'll need to re-enter credentials and re-sync DNS.
 
 ### Step 3. Verify Convex is current
 
@@ -76,6 +101,8 @@ Ensure the Convex deployment is in sync with the new auth config:
 ```bash
 npx convex deploy
 ```
+
+Note: `--prod` flag was removed in recent Convex versions. `convex deploy` targets production by default; dev/preview is gated via the `CONVEX_DEPLOY_KEY` env var (useful for CI automation — the CLI refuses piped stdin for interactive prod pushes).
 
 If this is the first deploy, it will prompt the user to create a deployment. If it errors because `npx convex dev` hasn't run yet, tell the user to run `npx convex dev` in another terminal and wait for "Convex functions ready!" before re-running.
 
@@ -150,6 +177,13 @@ This:
 
 If the user isn't logged in to Vercel, the script will prompt them. If `vercel` isn't installed, it prints the install command (`pnpm add -g vercel`).
 
+**Custom domain — two states, two separate commands.** Before `vercel dns add` can touch records, the domain must be in the **team inventory** (separate from being attached to a specific project). If the user bought the domain via `vercel domains buy`, it's automatically in inventory. If they bought it elsewhere, they must run `vercel domains add <domain>` first. Only THEN can they run `vercel dns add <domain> ...` to manage records, and `vercel alias set <deployment> <domain>` to attach to the project.
+
+Also flag two `vercel` CLI quirks:
+
+- `--scope <team>` must come AFTER the subcommand: `vercel dns add ... --scope team-xyz` works; `vercel --scope team-xyz dns add ...` errors.
+- `vercel dns rm <id> --yes` is NOT supported — pipe `y` via heredoc for unattended runs: `yes y | vercel dns rm <id>`.
+
 ### Step 7. Push production env vars
 
 Read values from `.env.local` and push them to Vercel's production environment. Run these one at a time (the user is prompted per value — Vercel CLI's design):
@@ -204,7 +238,9 @@ If `n`, ask for the failure signal (build error / runtime error / auth error) an
 
 - `VITE_CLERK_PUBLISHABLE_KEY` missing in production → re-run step 7.
 - Clerk redirect URL not allowlisted → add the Vercel URL in Clerk dashboard → "Domains".
-- Convex deploy lag → confirm `npx convex deploy --prod` has run.
+- Convex deploy lag → confirm `npx convex deploy` has run (no `--prod` flag needed in current Convex).
+- SPA route 404s on direct load → verify `vercel.json` SPA rewrites shipped. The substrate scaffold includes `vercel.json` with a catch-all rewrite to `/index.html`; if somehow missing, add it before redeploying.
+- Clerk sign-in redirects to `/sign-up/verify-email-address` and 404s → ensure `<SignUp/>` and `<SignIn/>` use `routing="virtual"` (not `routing="path"`). Virtual keeps Clerk's multi-step flow in memory and avoids the need for splat routes.
 
 ### Step 10. Commit + handoff
 
