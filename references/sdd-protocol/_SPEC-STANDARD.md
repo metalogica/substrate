@@ -313,7 +313,22 @@ When a spec is superseded:
 
 ---
 
-## 11. Versioning
+## 11. Archive Protocol
+
+When `/substrate:execute` archives a spec to `docs/tasks/completed/<feature>/`, the archived spec becomes append-only.
+
+**Immutability Rule (archived specs)**:
+
+- Archived specs MUST NOT be edited.
+- The single exception: a `### Post-execution notes` block MAY be appended to record deviations between what the spec prescribed and what actually shipped. This block is itself idempotent — on re-synthesis, its body is REPLACED in place rather than duplicated.
+
+**Why**: future agents are pointed at `docs/tasks/completed/` as the canonical record of what shipped. Silent edits to that record are a landmine — the next agent reads the archived spec as ground truth, then finds the codebase no longer matches. The Post-execution notes block is the canonical place to record reality-vs-plan deltas without overwriting the original prescription.
+
+**Enforcement**: `/substrate:synthesize-session` Step 6 is the only authorised writer of this block. No other skill, agent, or human edit should touch an archived spec.
+
+---
+
+## 12. Versioning
 
 Specs use semantic versioning:
 
@@ -327,8 +342,9 @@ Specs use semantic versioning:
 
 ---
 
-## 12. Change Log
+## 13. Change Log
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2026-02-07 | Initial specification standards |
+| 1.1.0 | 2026-05-10 | Add §11 Archive Protocol (immutability rule for archived specs + Post-execution notes block); renumber Versioning to §12, Change Log to §13 |
