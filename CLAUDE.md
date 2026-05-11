@@ -8,13 +8,14 @@ A Claude Code **plugin** that scaffolds full-stack Vite + Convex + Clerk applica
 
 The plugin exposes:
 
-- **6 user-facing skills** under `skills/`:
+- **7 user-facing skills** under `skills/`:
   - `/substrate:init` — scaffold a new project in an empty directory (stage 1)
   - `/substrate:migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
   - `/substrate:deploy` — Clerk + Vercel + first live deploy (stage 3)
   - `/substrate:architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs
   - `/substrate:execute <spec>` — executes a spec phase-by-phase with verification gates
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
+  - `/substrate:synthesize-session` — terminal phase after `/substrate:execute`: capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
 
 - **4 architect subagents** under `agents/`:
   - `domain-architect`, `backend-architect`, `frontend-architect` — per-layer specialists spawned in parallel by the orchestrator skills

@@ -35,7 +35,7 @@
 
 ## Install
 
-See the commands at the top of this README. After install, all six skills appear under `/substrate:*`.
+See the commands at the top of this README. After install, all seven skills appear under `/substrate:*`.
 
 ### Development
 
@@ -98,6 +98,9 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 /substrate:quick-spec  OR  /substrate:architect-spec + /substrate:execute   ← iterate features
     │
     ▼
+/substrate:synthesize-session   ← terminal phase: capture session learning into doctrine fixes + beads
+    │
+    ▼
 /substrate:deploy          ← stage 3: Clerk + Vercel + live URL
 ```
 
@@ -110,6 +113,7 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 | `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, dispatches all three architects in parallel, composes an executable spec following the SDD protocol. |
 | `/substrate:execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. |
 | `/substrate:quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/substrate:architect-spec` for anything big. |
+| `/substrate:synthesize-session` | Terminal phase after `/substrate:execute`. Scans the session transcript + `git log` + doctrines for drift, applies up to 5 atomic doctrine-fix commits, queues larger amendments for human triage, drafts dependency-ordered beads with self-contained state-transfer prompts, and writes a synthesis report with a top-3-to-5 Pareto cut. Idempotent. |
 | `/substrate:deploy` | Walk Clerk setup (no Google Cloud required — Clerk's dev instance ships with shared OAuth), wire the repo to GitHub + Vercel, push production env vars, trigger the first live deploy. |
 
 ## Doctrine
