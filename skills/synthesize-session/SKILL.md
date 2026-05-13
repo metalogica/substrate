@@ -52,9 +52,12 @@ In addition to context, the skill reads:
 The skill resolves the bead-tracker as follows:
 
 1. If `.substrate/config.json` exists and contains `"bead-tracker": "tbd" | "none" | "other"`, honor it.
-2. Otherwise auto-detect: `tbd` if both `.tbd/config.yml` exists AND `npx --no-install get-tbd --version` succeeds; else `none`.
+2. Otherwise auto-detect: `tbd` if `.tbd/config.yml` exists AND a `tbd` binary is callable — either `command -v tbd` succeeds (global install, e.g. `pnpm add -g tbd`) OR `npx --no-install get-tbd --version` succeeds (local install). Else `none`.
 
-Regardless of tracker, every bead is **also** persisted as a markdown file at `docs/tasks/ongoing/<bead-slug>/bead.md` (mirrors the spec convention — directories not bare files). The markdown is the canonical artifact. If `tbd` is the tracker, Step 9 offers to mirror beads into tbd and propagate IDs.
+**Canonical store depends on tracker:**
+
+- If tracker is `tbd`: **tbd is canonical.** Bead bodies are composed as markdown at `docs/tasks/ongoing/<bead-slug>/bead.md` only as scratch input to `tbd create --file`. Step 9 creates them in tbd by default (not as an optional mirror). After tbd assigns IDs, the markdown scratch file may be deleted or left in place per user preference — tbd is the source of truth.
+- If tracker is `none`: **markdown is canonical.** Beads live permanently at `docs/tasks/ongoing/<bead-slug>/bead.md` (mirrors the spec convention — directories not bare files).
 
 ## Workflow
 
@@ -100,13 +103,13 @@ git log --name-only --format= <base>..HEAD -- docs/doctrine/          # already-
 find docs/doctrine -type f -name '*.md'                               # doctrines to scan
 ls docs/tasks/ongoing/doctrine-updates/ 2>/dev/null                   # queued amendments
 test -f .substrate/config.json && cat .substrate/config.json          # explicit tracker config
-test -f .tbd/config.yml && npx --no-install get-tbd --version         # tbd auto-detect
+test -f .tbd/config.yml && (command -v tbd >/dev/null || npx --no-install get-tbd --version)   # tbd auto-detect (global or local)
 test -f docs/synthesis-index.md && cat docs/synthesis-index.md        # cross-session inventory
 ```
 
 **Already-actioned filter (G1):** the list of doctrine files touched between `<base>` and `HEAD` defines the already-shipped set. Step 3 MUST exclude any candidate whose target file (or specific section within file, when grep-resolvable) is in that set. Re-suggesting a fix that already landed this session is a critical failure.
 
-**Bead inventory:** if tracker is `tbd`, run `npx --no-install get-tbd list`; otherwise enumerate `docs/tasks/ongoing/<*>/bead.md`. Also load every `## §4 Beads created` table row from `docs/synthesis-index.md` if it exists (G10 cross-session dedup).
+**Bead inventory:** if tracker is `tbd`, run `tbd list` if a global binary is on `PATH`, else `npx --no-install get-tbd list`; otherwise enumerate `docs/tasks/ongoing/<*>/bead.md`. Also load every `## §4 Beads created` table row from `docs/synthesis-index.md` if it exists (G10 cross-session dedup).
 
 ### Step 3 — Scan and categorize (draft, no writes yet)
 
@@ -201,7 +204,7 @@ Per SDD doctrine — see `docs/protocol/sdd/_SPEC-STANDARD.md` §11 Archive Prot
 
 ### Step 7 — Draft beads (includes deferred-fixes)
 
-For each `bead` and `deferred-fix` candidate, write `docs/tasks/ongoing/<bead-slug>/bead.md` (no separate `beads/` directory — mirrors the spec convention).
+For each `bead` and `deferred-fix` candidate, compose the bead body as markdown at `docs/tasks/ongoing/<bead-slug>/bead.md`. If tracker is `tbd`, this file is **scratch input** for Step 9 (`tbd create --file`); the canonical bead will live in tbd. If tracker is `none`, this file is the canonical artifact (no separate `beads/` directory — mirrors the spec convention).
 
 **Bead ID:** `synth-<feature>-<YYYY-MM-DD>-<HHMM>-<NN>` where `<HHMM>` is the skill-invocation time. The time suffix dedupes parallel-session runs on the same feature.
 
@@ -294,17 +297,17 @@ Topological layers, conceptually:
 [Optimisation beads — only after features land]
 ```
 
-### Step 9 — Reconcile with bead tracker (optional)
+### Step 9 — Persist beads to tracker
 
-Skip entirely if `bead-tracker: none`.
+Skip entirely if `bead-tracker: none` — markdown bodies from Step 7 are already canonical.
 
-If `bead-tracker: tbd`:
+If `bead-tracker: tbd`, this step is **mandatory** (tbd is canonical when configured; Step 7 markdown is scratch input):
 
-1. Print the proposed invocations, one per bead: `npx get-tbd create --type <type> --file <bead.md path> "<title>"`.
-2. Ask: `Create all N beads via tbd now? (y / n / select)` with default-escape suffix.
-   - **`y`**: create all.
-   - **`select`** (P1): enters a per-bead `y / n / skip` loop, in DAG order. Skipped beads remain markdown-only.
-   - **`n`**: skip Step 9 entirely.
+1. Print the proposed invocations, one per bead: `tbd create --type <type> --file <bead.md path> "<title>"`. Substitute `npx --no-install get-tbd` for `tbd` if no global binary is on `PATH`.
+2. Ask: `Create all N beads in tbd now? (Y / n / select)` — the **default is Y** for tbd-configured repos. This is a binary approval gate; no default-escape suffix.
+   - **`y`** (default): create all.
+   - **`select`** (P1): enters a per-bead `y / n / skip` loop, in DAG order. Skipped beads remain as markdown scratch only — explicitly non-canonical.
+   - **`n`**: skip persistence entirely. Warn the user: *"Beads remain as markdown scratch at `docs/tasks/ongoing/<slug>/bead.md`. Because this repo is configured with `bead-tracker: tbd`, those files are non-canonical and may be lost if you expected tbd to be the source of truth."*
 3. **Single-pass ID propagation (C7):** after tbd assigns IDs, build the `{old-id → new-id}` map. Rewrite the `id:` frontmatter of each created bead AND every `blocked-by:` reference across the bead corpus AND the synthesis report's §4 table. Do this in one pass before exiting Step 9.
 
 ### Step 10 — Write the synthesis report
@@ -397,6 +400,7 @@ Set `status: complete` in the synthesis report frontmatter. Exit.
 - **MUST NOT** mix synthesis commits with the spec-execute commit. Each immediate fix is its own commit. The spec-execute commit must remain one revertable unit.
 - **MUST NOT** create beads that duplicate existing beads. Run the dedup gate against both the tracker AND `docs/synthesis-index.md` unconditionally.
 - **MUST NOT** re-apply doctrine fixes that already shipped earlier in this session — apply the already-actioned filter (Step 2) before categorizing.
+- **MUST** treat the bead-tracker as canonical when configured. If `bead-tracker: tbd`, Step 9 is **mandatory** (default `Y`) and the markdown at `docs/tasks/ongoing/<bead-slug>/bead.md` is scratch input only. If `bead-tracker: none`, markdown is canonical. Never present tbd-persistence as an optional mirror in a tbd-configured repo — that inverts the source-of-truth and pushes the user toward dropping work on the floor.
 - **MUST** cap immediate fixes at 5, ranked by `miscoaching_cost × inverse_revert_cost`. Demoted candidates become `type: drift` beads, not amendments.
 - **MUST** produce a top-3-to-5 Pareto cut in §7 of the report. Same rigor as the cap.
 - **MUST** annotate the archived spec with a `### Post-execution notes` block whenever deviations occurred. Replace, don't append.
