@@ -1,6 +1,6 @@
 ---
 name: doctrine-architect
-description: "Generic, parameterized doctrine specialist for substrate projects. Spawned by architect-spec (or other orchestrators) once per discovered doctrine. Reads its assigned doctrine, analyzes a brief through that doctrine's lens, and returns structured recommendations the orchestrator composes into a spec. Replaces the previously-specific domain/backend/frontend architects with a single agent parameterized by doctrine path."
+description: "Generic, parameterized doctrine specialist for substrate projects. Spawned by orchestrator skills (`/substrate:architect-spec`, `/substrate:migrate`) once per discovered doctrine. Reads its assigned doctrine, analyzes a brief through that doctrine's lens, and returns structured recommendations the orchestrator composes into a spec. Replaces the previously-specific domain/backend/frontend architects with a single agent parameterized by doctrine path."
 model: inherit
 ---
 

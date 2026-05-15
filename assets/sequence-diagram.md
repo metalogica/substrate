@@ -167,7 +167,7 @@ sequenceDiagram
 
     User->>SessionA: /substrate:architect-spec <brief-path>
     SessionA->>SessionA: validate brief sections
-    SessionA->>SessionA: architect-spec agent spawned
+    SessionA->>SessionA: discover doctrines (manifest or glob)
     SessionA->>User: Socratic Q&A
 
     loop Until unambiguous
@@ -238,5 +238,6 @@ sequenceDiagram
 
 | Agent | Invoked by | Role |
 |-------|-----------|------|
-| `doctrine-architect` | `architect-spec`, `/substrate:migrate` | Generic, parameterized doctrine specialist. Binds to whichever doctrine file it's given (path passed by the orchestrator). Reads the doctrine in full, analyses the brief/prototype through that doctrine's lens, returns structured recommendations + cross-doctrine dependencies. One instance spawned per relevant doctrine, all in parallel. Replaces the previous `domain-architect` / `backend-architect` / `frontend-architect` trio. |
-| `architect-spec` | `/substrate:architect-spec` | SDD orchestrator. Runs Q&A, discovers project doctrines (`doctrine-manifest.yaml` preferred, glob fallback), filters by triggers, dispatches one `doctrine-architect` per relevant doctrine in parallel, composes the gated spec. |
+| `doctrine-architect` | `/substrate:architect-spec`, `/substrate:migrate` | Generic, parameterized doctrine specialist. Binds to whichever doctrine file it's given (path passed by the orchestrator skill). Reads the doctrine in full, analyses the brief/prototype through that doctrine's lens, returns structured recommendations + cross-doctrine dependencies. One instance spawned per relevant doctrine, all in parallel. Replaces the previous `domain-architect` / `backend-architect` / `frontend-architect` trio. |
+
+> Orchestration runs at skill level (depth 0). There is no intermediate `architect-spec` subagent — the harness depth-cap forbids a depth-1 subagent from spawning depth-2 children, so `/substrate:architect-spec` dispatches `doctrine-architect`s directly, just like `/substrate:migrate`.

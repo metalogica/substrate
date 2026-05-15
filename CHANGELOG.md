@@ -5,6 +5,16 @@ All notable changes to this plugin are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `/substrate:architect-spec` — orchestration now runs at skill level (depth 0). The previous design routed work through an `architect-spec` *subagent* (depth 1) that was supposed to dispatch `doctrine-architect` children (depth 2), but the Claude Code harness depth-cap forbids depth-2 spawn — so the fan-out silently degraded to single-context self-loading on every invocation, losing the parallel-architect cross-check. The skill now absorbs the full workflow (Q&A → parallel dispatch → mediation → composition → write), mirroring how `/substrate:migrate` already operates.
+
+### Removed
+
+- `agents/architect-spec.md` — orchestrator subagent deleted; its workflow lives in `skills/architect-spec/SKILL.md`.
+
 ## [0.2.1] — 2026-04-21
 
 Schema conformance fixes for first install. `v0.2.0` failed to install from the marketplace due to two manifest schema violations; this release fixes both. No functional changes to skills, agents, or templates.

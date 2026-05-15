@@ -194,7 +194,7 @@ When a brief exists at `docs/tasks/ongoing/<feature>/<feature>-brief.md`:
 /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md
 ```
 
-The `architect-spec` agent will:
+The `/substrate:architect-spec` skill will:
 1. Read the brief and discover the project's doctrines (`docs/doctrine/doctrine-manifest.yaml` if present, else glob `docs/doctrine/**/*-doctrine.md`)
 2. Introspect referenced specs and code
 3. Engage in Socratic Q&A to clarify ambiguities

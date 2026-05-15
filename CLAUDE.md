@@ -17,9 +17,8 @@ The plugin exposes:
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
   - `/substrate:synthesize-session` — terminal phase after `/substrate:execute`: capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
 
-- **2 subagents** under `agents/`:
-  - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrators once per relevant doctrine; binds to whichever doctrine file it's given.
-  - `architect-spec` — SDD orchestrator. Discovers the project's doctrines (`docs/doctrine/doctrine-manifest.yaml` preferred, else glob `docs/doctrine/**/*-doctrine.md`), dispatches one `doctrine-architect` per relevant doctrine in parallel, composes their outputs into a spec.
+- **1 subagent** under `agents/`:
+  - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrator skills (`/substrate:architect-spec`, `/substrate:migrate`) once per relevant doctrine; binds to whichever doctrine file it's given. Orchestration runs at skill level (depth 0) so the fan-out can spawn N children — subagents cannot themselves spawn subagents.
 
 - **Shared references** under `references/`:
   - `doctrines/` — binding architectural doctrines (domain, backend, frontend) copied into every new substrate project as `docs/doctrine/`
