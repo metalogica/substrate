@@ -35,7 +35,7 @@
 
 ## Install
 
-See the commands at the top of this README. After install, all seven skills appear under `/substrate:*`.
+See the commands at the top of this README. After install, all eight skills appear under `/substrate:*`.
 
 ### Development
 
@@ -109,11 +109,12 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 | Skill | Purpose |
 |-------|---------|
 | `/substrate:init` | Scaffold a new project in an empty directory. Runs product-focused Socratic Q&A, writes the kernel (domain + tests + docs + doctrines), generates the Gemini AI Studio Build prompt + optional runtime AI system prompt. |
-| `/substrate:migrate` | Migrate a Gemini AI Studio prototype (dropped in `prototype/`) into the substrate kernel. Three architect subagents (domain / backend / frontend) analyze it in parallel; you approve a migration plan; files move into `src/` with doctrine alignment and a drafted Convex backend. |
-| `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, dispatches all three architects in parallel, composes an executable spec following the SDD protocol. |
+| `/substrate:migrate` | Migrate a Gemini AI Studio prototype (dropped in `prototype/`) into the substrate kernel. Discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` subagent per relevant doctrine in parallel; you approve a migration plan; files move into `src/` with doctrine alignment and a drafted Convex backend. |
+| `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` per relevant doctrine in parallel, composes an executable spec following the SDD protocol. |
 | `/substrate:execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. |
 | `/substrate:quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/substrate:architect-spec` for anything big. |
 | `/substrate:synthesize-session` | Terminal phase after `/substrate:execute`. Scans the session transcript + `git log` + doctrines for drift, applies up to 5 atomic doctrine-fix commits, queues larger amendments for human triage, drafts dependency-ordered beads with self-contained state-transfer prompts, and writes a synthesis report with a top-3-to-5 Pareto cut. Idempotent. |
+| `/substrate:add-doctrine <name>` | Scaffold a new doctrine category for horizontal expansion (infra, claw, treasury, security, etc.). Runs a short Socratic Q&A for path / human-readable name / summary / layer-hint / triggers, writes a doctrine stub with `<fill in>` placeholders, and either appends an entry to the existing `doctrine-manifest.yaml` or offers to bootstrap one (registering every existing doctrine plus the new one). Does not commit — the user reviews the stub first. |
 | `/substrate:deploy` | Walk Clerk setup (no Google Cloud required — Clerk's dev instance ships with shared OAuth), wire the repo to GitHub + Vercel, push production env vars, trigger the first live deploy. |
 
 ## Doctrine
