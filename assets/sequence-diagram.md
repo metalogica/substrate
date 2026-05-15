@@ -77,10 +77,11 @@ sequenceDiagram
     User->>Claude: /substrate:migrate
     Claude->>Claude: read prototype tree
 
-    par Parallel architect dispatch
-        Claude->>Claude: domain-architect analyzes prototype
-        Claude->>Claude: backend-architect infers schema from mocks
-        Claude->>Claude: frontend-architect maps migration
+    par Parallel doctrine-architect dispatch (one per discovered doctrine)
+        Claude->>Claude: doctrine-architect (domain) — identifies concepts + validations
+        Claude->>Claude: doctrine-architect (backend) — infers schema from mocks
+        Claude->>Claude: doctrine-architect (frontend) — maps component migration
+        Note over Claude: ...and one more per any additional<br/>doctrine in the project (infra, etc.)
     end
 
     Claude->>User: migration plan
@@ -174,10 +175,11 @@ sequenceDiagram
         User-->>SessionA: answers
     end
 
-    par Parallel dispatch
-        SessionA->>SessionA: domain-architect
-        SessionA->>SessionA: backend-architect
-        SessionA->>SessionA: frontend-architect
+    par Parallel dispatch (one doctrine-architect per relevant doctrine)
+        SessionA->>SessionA: doctrine-architect (domain)
+        SessionA->>SessionA: doctrine-architect (backend)
+        SessionA->>SessionA: doctrine-architect (frontend)
+        Note over SessionA: ...plus any additional doctrines<br/>discovered via manifest or glob
     end
 
     SessionA->>SessionA: compose spec per spec-template.md
@@ -236,7 +238,5 @@ sequenceDiagram
 
 | Agent | Invoked by | Role |
 |-------|-----------|------|
-| `domain-architect` | `architect-spec`, `/substrate:migrate` | Identifies domain concepts, enforces purity + Result pattern + Brand types. |
-| `backend-architect` | `architect-spec`, `/substrate:migrate` | Schema + indexes + queries/mutations/actions, `requireAuth` placement, external API routing. |
-| `frontend-architect` | `architect-spec`, `/substrate:migrate` | Route structure, hook-layer bridges, pure presentational components, Tailwind v4 styling. |
-| `architect-spec` | `/substrate:architect-spec` | SDD orchestrator. Runs Q&A, dispatches the three layer architects in parallel, composes the gated spec. |
+| `doctrine-architect` | `architect-spec`, `/substrate:migrate` | Generic, parameterized doctrine specialist. Binds to whichever doctrine file it's given (path passed by the orchestrator). Reads the doctrine in full, analyses the brief/prototype through that doctrine's lens, returns structured recommendations + cross-doctrine dependencies. One instance spawned per relevant doctrine, all in parallel. Replaces the previous `domain-architect` / `backend-architect` / `frontend-architect` trio. |
+| `architect-spec` | `/substrate:architect-spec` | SDD orchestrator. Runs Q&A, discovers project doctrines (`doctrine-manifest.yaml` preferred, glob fallback), filters by triggers, dispatches one `doctrine-architect` per relevant doctrine in parallel, composes the gated spec. |

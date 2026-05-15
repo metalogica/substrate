@@ -195,11 +195,11 @@ When a brief exists at `docs/tasks/ongoing/<feature>/<feature>-brief.md`:
 ```
 
 The `architect-spec` agent will:
-1. Read the brief and the binding doctrines in `docs/doctrine/`
+1. Read the brief and discover the project's doctrines (`docs/doctrine/doctrine-manifest.yaml` if present, else glob `docs/doctrine/**/*-doctrine.md`)
 2. Introspect referenced specs and code
 3. Engage in Socratic Q&A to clarify ambiguities
-4. Dispatch `domain-architect`, `backend-architect`, and/or `frontend-architect` in parallel based on which layers the brief touches
-5. Generate `<feature>-spec.md` with a Prompt Execution Strategy (phases → steps → verify → gate)
+4. Filter to doctrines whose triggers match the brief (or all doctrines if no triggers declared) and dispatch one `doctrine-architect` subagent per relevant doctrine — in parallel, a single Agent-tool message with N tool calls
+5. Generate `<feature>-spec.md` with a Prompt Execution Strategy (phases → steps → verify → gate), one phase per `layer-hint` group present in the architect outputs
 6. Hand off to `/substrate:execute` in a fresh session for gated execution
 
 ---

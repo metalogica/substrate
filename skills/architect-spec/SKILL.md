@@ -1,11 +1,11 @@
 ---
 name: architect-spec
-description: "Turn a manually written brief into an executable multi-phase spec with verification gates. Invoke with a brief path (docs/tasks/ongoing/<feature>/<feature>-brief.md). Runs Socratic Q&A to resolve ambiguity, spawns domain/backend/frontend architect subagents in parallel, composes their structured recommendations into a spec following the SDD protocol, and writes docs/tasks/ongoing/<feature>/<feature>-spec.md. Hands off to /substrate:execute for gated execution in a fresh session."
+description: "Turn a manually written brief into an executable multi-phase spec with verification gates. Invoke with a brief path (docs/tasks/ongoing/<feature>/<feature>-brief.md). Runs Socratic Q&A to resolve ambiguity, discovers the project's doctrines via manifest or glob, dispatches one doctrine-architect subagent per relevant doctrine in parallel, composes their structured recommendations into a spec following the SDD protocol, and writes docs/tasks/ongoing/<feature>/<feature>-spec.md. Hands off to /substrate:execute for gated execution in a fresh session."
 ---
 
 # /substrate:architect-spec
 
-Entry point for the SDD spec-drafting flow. Delegates to the `architect-spec` agent, which runs the Q&A, dispatches the three architect subagents, and composes the spec.
+Entry point for the SDD spec-drafting flow. Delegates to the `architect-spec` agent, which runs the Q&A, discovers project doctrines, dispatches a `doctrine-architect` subagent per relevant doctrine in parallel, and composes the spec.
 
 ## Arguments
 
@@ -43,7 +43,12 @@ If any required section is missing or empty, surface the gaps and ask the user t
 ### Step 2. Verify project state
 
 ```bash
-test -d docs/doctrine && test -f docs/doctrine/domain-doctrine.md && test -d docs/protocol/sdd || echo "NOT_INITIALIZED"
+# Initialization check: protocol dir present AND at least one doctrine discoverable
+# (manifest preferred, glob fallback).
+test -d docs/protocol/sdd && test -d docs/doctrine && \
+  ( test -f docs/doctrine/doctrine-manifest.yaml || \
+    find docs/doctrine -type f -name '*-doctrine.md' -print -quit | grep -q . ) \
+  || echo "NOT_INITIALIZED"
 ```
 
 If output is `NOT_INITIALIZED`, stop and tell the user to run `/substrate:init` first.
@@ -57,11 +62,12 @@ Dispatch the `architect-spec` subagent via the Agent tool. Pass it:
 
 The agent will:
 
-1. Read the brief + the three doctrines.
+1. Read the brief and discover the project's doctrines (`docs/doctrine/doctrine-manifest.yaml` if present, else glob `docs/doctrine/**/*-doctrine.md`).
 2. Run Socratic Q&A with the user to resolve ambiguity.
-3. Dispatch `domain-architect`, `backend-architect`, `frontend-architect` in parallel based on which layers the brief touches.
-4. Compose the spec per `docs/protocol/sdd/templates/spec-template.md`, adapted for the Convex stack.
-5. Write the finished spec to `docs/tasks/ongoing/<feature>/<feature>-spec.md`.
+3. Filter to doctrines whose manifest triggers match the brief (or all doctrines if no triggers declared), and dispatch one `doctrine-architect` subagent per relevant doctrine in parallel — a single Agent-tool message with N tool calls.
+4. Mediate any cross-doctrine dependencies the architects flag.
+5. Compose the spec per `docs/protocol/sdd/templates/spec-template.md`, with one Architecture subsection and one Prompt-Execution-Strategy phase per `layer-hint` group present in the architect outputs.
+6. Write the finished spec to `docs/tasks/ongoing/<feature>/<feature>-spec.md`.
 
 ### Step 4. Report the handoff
 
@@ -88,5 +94,5 @@ Do NOT execute the spec yourself in this session. The handoff is the whole point
 - MUST validate the brief before dispatching the agent. Architects cannot work from an empty brief.
 - MUST NOT execute the spec. This skill only produces it.
 - MUST NOT invite the user to run `/substrate:execute` in the SAME session — the fresh-context benefit is the core design.
-- MUST use a single Agent tool call to dispatch `architect-spec`. The agent handles parallel sub-architect dispatch internally.
+- MUST use a single Agent tool call to dispatch `architect-spec`. The agent handles parallel `doctrine-architect` dispatch internally.
 - MUST surface any Q&A the agent raises back to the user in real time — don't buffer.

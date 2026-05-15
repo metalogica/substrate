@@ -17,9 +17,9 @@ The plugin exposes:
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
   - `/substrate:synthesize-session` — terminal phase after `/substrate:execute`: capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
 
-- **4 architect subagents** under `agents/`:
-  - `domain-architect`, `backend-architect`, `frontend-architect` — per-layer specialists spawned in parallel by the orchestrator skills
-  - `architect-spec` — SDD orchestrator that spawns the layer specialists and composes their outputs into a spec
+- **2 subagents** under `agents/`:
+  - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrators once per relevant doctrine; binds to whichever doctrine file it's given.
+  - `architect-spec` — SDD orchestrator. Discovers the project's doctrines (`docs/doctrine/doctrine-manifest.yaml` preferred, else glob `docs/doctrine/**/*-doctrine.md`), dispatches one `doctrine-architect` per relevant doctrine in parallel, composes their outputs into a spec.
 
 - **Shared references** under `references/`:
   - `doctrines/` — binding architectural doctrines (domain, backend, frontend) copied into every new substrate project as `docs/doctrine/`
@@ -110,7 +110,23 @@ Skills detect which stage the user is in by inspecting the current directory, no
 
 ### Agents are spawned by skills, never directly by the user
 
-Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skills spawn agents via the Agent tool. The three layer architects are spawned in parallel by `architect-spec` and `substrate:migrate` in a single message with three tool calls.
+Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skills spawn agents via the Agent tool. Both `architect-spec` (for brief → spec) and `/substrate:migrate` (for prototype → kernel) discover doctrines and spawn one `doctrine-architect` per relevant doctrine in parallel — a single Agent-tool message with N tool calls. `/substrate:quick-spec` reads doctrines directly (no subagent dispatch) but uses the same manifest-or-glob discovery.
+
+### Doctrine manifest (optional contract)
+
+When a project's doctrine tree grows past three flat files, it can declare a `docs/doctrine/doctrine-manifest.yaml` to drive discovery. Schema:
+
+| Field | Required | Purpose |
+|---|---|---|
+| `id` | yes | Short unique identifier (e.g. `backend`, `infra`, `praxis`) |
+| `name` | yes | Human-readable label |
+| `path` | yes | Relative path to the doctrine `.md` file |
+| `triggers` | no | List of brief-content keywords; doctrine is dispatched only when one matches. Omit to mark the doctrine as always-relevant. |
+| `summary` | yes | Short blurb the orchestrator reads before deciding to dispatch |
+| `specialist` | no | Agent to dispatch (default `doctrine-architect`); reserved for future per-doctrine custom specialists |
+| `layer-hint` | no | One of `domain \| backend \| frontend \| infra \| cross-cutting`; controls phase ordering in the composed spec |
+
+If no manifest is present, orchestrators fall back to globbing `docs/doctrine/**/*-doctrine.md` and dispatching every match. The flat-three-file layout substrate ships in `references/templates/` is handled by this fallback without any manifest required.
 
 ### Scaffold by copy, not by template engine
 

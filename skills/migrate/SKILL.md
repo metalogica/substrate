@@ -7,7 +7,7 @@ description: "Migrate a Gemini AI Studio prototype into the substrate kernel. Ex
 
 Bring a Gemini AI Studio prototype into the substrate kernel. This is stage 2 — turning a standalone Vite app (frontend only, mock data) into a full-stack Vite + Convex + Clerk project aligned to the three doctrines.
 
-**Heads up:** this is a multi-minute operation. It spawns three architect subagents in parallel, then executes many file writes with verification gates between each sub-step. Narrate progress so the user sees what's happening.
+**Heads up:** this is a multi-minute operation. It discovers the project's doctrines, spawns one `doctrine-architect` subagent per relevant doctrine in parallel, then executes many file writes with verification gates between each sub-step. Narrate progress so the user sees what's happening.
 
 ## When to run
 
@@ -68,49 +68,33 @@ Then map the prototype's shape before dispatching architects. Use Glob + Read:
 
 You don't need to read every component in full — sample them to understand structure. Pass the resolved `$PROTOTYPE_ROOT` through to the architect dispatches in step 3 so they look at the correct path.
 
-### Step 3. Dispatch architects in parallel
+### Step 3. Discover doctrines and dispatch architects in parallel
 
-Spawn the three architect subagents via the Agent tool **in a single message with three parallel tool calls**. Each gets a migration-focused prompt.
+First, discover the project's doctrines via the same fallback as `architect-spec`:
 
-**domain-architect:**
+1. If `docs/doctrine/doctrine-manifest.yaml` exists, parse it. For migrate (a one-time bulk operation), default to dispatching **every** entry whose `triggers:` plausibly relate to a prototype-migration concern — when in doubt, include. Over-dispatching costs context budget but never produces incorrect migrations.
+2. Else glob `docs/doctrine/**/*-doctrine.md` and dispatch every match.
 
-> Analyze the prototype at `prototype/src/` against `docs/doctrine/domain-doctrine.md`. Identify:
+For each discovered doctrine, spawn its declared `specialist` (default `doctrine-architect`) via the Agent tool **in a single message with N parallel tool calls**. Each gets the migration-focused prompt below, parameterized by the doctrine's path:
+
+> Analyze the prototype at `$PROTOTYPE_ROOT` against your assigned doctrine (path: `<doctrine-path>`). Identify:
 >
-> - Domain concepts embedded in the prototype (entities, value objects, pure decisions, validations).
-> - Inline validation logic that MUST move to `domain/`.
-> - Derived properties (e.g. `displayName`, `isEligible`, computed totals) that should become value-object getters or pure functions.
-> - Any `new Date()` / `Math.random()` usages that violate the no-determinism rule.
+> - Concepts and patterns in the prototype that belong in the area your doctrine governs.
+> - Inline logic in the prototype that violates your doctrine's rules and must be relocated or rewritten.
+> - Derived properties, validations, or determinism violations within your doctrine's scope.
+> - For backend-shaped doctrines: mock data sources that should become Convex tables (table names plural camelCase; `v.*` validators; relationships via `v.id(...)`; indexes inferred from prototype filter/sort sites).
+> - For frontend-shaped doctrines: components violating pure-presentation, default exports that should become named, routing pattern conversion to TanStack Router, data-fetching sites that should become `useQuery` hooks in `src/hooks/`.
+> - For infra-shaped doctrines: any platform/deployment concerns the prototype implies (env-vars, secrets, external services).
 >
-> Return recommendations per your output format. Additionally produce a **migration file list**: for each new domain file, list the source path(s) in `prototype/` the logic came from and what transformation is needed (extract, rename, split, rewrite).
+> Return your standard output format PLUS a **migration file list**: for each new file you recommend, list the source path(s) in `$PROTOTYPE_ROOT` the logic came from and the transformation needed (extract, rename, split, rewrite).
 
-**backend-architect:**
-
-> Analyze the prototype's mock data in `prototype/src/` against `docs/doctrine/backend-doctrine.md`. For each mock data source (hardcoded array, `useState` with seed data, JSON fixture):
->
-> - Identify the table name (plural camelCase, e.g. `posts`, `stores`).
-> - Extract field shapes → `v.*` validators.
-> - Identify relationships (e.g. `Review.storeId` → `v.id("stores")`).
-> - Infer required indexes from how the prototype filters/sorts that data.
->
-> Return schema recommendations per your output format, plus initial query/mutation signatures for each table. Since this is a fresh backend, all mutations start with `requireAuth` unless clearly public (e.g. an anonymous store listing).
-
-**frontend-architect:**
-
-> Analyze the prototype's components at `prototype/src/` against `docs/doctrine/frontend-doctrine.md`. Identify:
->
-> - Components violating the pure-presentation rule (hooks inside, fetch inside, validation inside).
-> - Default exports that should become named exports.
-> - Inline validation that belongs in `domain/`.
-> - The routing pattern the prototype uses (plain conditional rendering, React Router, etc.) and how to convert it to TanStack Router file-based routes.
-> - Data-fetching sites (useState + mock arrays) that should become `useQuery(api.xxx)` via a hook in `src/hooks/`.
->
-> Return recommendations per your output format, plus a **per-file migration map**: source path in `prototype/src/`, target path in `src/`, and required rewrites.
-
-Wait for all three to complete before proceeding.
+Wait for all dispatches to complete before proceeding. Doctrines whose architects return the "No Recommendations" form indicate the prototype doesn't touch that doctrine's scope — drop them from Step 4's plan rather than synthesizing empty sections.
 
 ### Step 4. Synthesize the migration plan
 
-Compose the three architect outputs into a numbered migration plan. Show it to the user exactly in this shape:
+Compose the architect outputs into a numbered migration plan. Group sections by each architect's `layer-hint`, ordered: `domain` → `backend` → `frontend` → `infra` → `cross-cutting`. The migration-staging sections (Hooks, Providers, Files dropped) are always present regardless of which doctrines were dispatched — they encode migrate's own workflow, not doctrine output.
+
+Show the plan to the user. For the baseline three-doctrine substrate scaffold, it takes this shape (one extra section per additional doctrine activated, inserted in the layer-hint order above):
 
 ```
 Migration Plan — <project name>
@@ -147,13 +131,13 @@ Files dropped (Gemini AI Studio artifacts not migrated):
 Approve this plan? (y / n / modify)
 ```
 
-If the user says `n` or `modify`, iterate: ask what to change, re-dispatch the relevant architect(s), regenerate the plan. Do NOT proceed without explicit approval.
+If the user says `n` or `modify`, iterate: ask what to change, re-dispatch the relevant `doctrine-architect`(s) with the change as additional context, regenerate the plan. Do NOT proceed without explicit approval.
 
 ### Step 5. Execute the plan
 
 Execute in this order. Verify green between each sub-step. If a sub-step breaks the build, fix it before moving on — don't pile up breakage.
 
-**5a. Domain layer.** Write domain files per domain-architect's recommendations. Write sibling unit tests at `test/unit/domain/<file>.test.ts`. Run:
+**5a. Domain layer.** Write domain files per the domain-doctrine architect's recommendations. Write sibling unit tests at `test/unit/domain/<file>.test.ts`. Run:
 
 ```bash
 pnpm app:compile
@@ -162,7 +146,7 @@ pnpm app:test
 
 Must stay green.
 
-**5b. Convex schema.** Write `convex/schema.ts` per backend-architect's recommendations. Run `pnpm app:compile` — must stay green. Query/mutation files come next; they import from `_generated/` which codegen will produce.
+**5b. Convex schema.** Write `convex/schema.ts` per the backend-doctrine architect's recommendations. Run `pnpm app:compile` — must stay green. Query/mutation files come next; they import from `_generated/` which codegen will produce.
 
 **5c. Convex functions.** Write `convex/_lib/auth.ts` (the `requireAuth` helper from `backend-doctrine.md §4.2`). Write `convex/<feature>.ts` files per the plan. These reference `./_generated/*` which doesn't exist yet — typecheck WILL fail until `npx convex dev` runs. That's expected.
 
@@ -394,7 +378,7 @@ Keep `pnpm convex:dev` + `pnpm app:dev` running in two terminals while you itera
 
 - MUST stage-check before doing anything destructive (step 1 gate).
 - MUST get explicit user approval at step 4 before writing any files (step 4 → 5 gate).
-- MUST spawn the three architects **in parallel** — a single message with three Agent tool calls.
+- MUST spawn all dispatched `doctrine-architect`s **in parallel** — a single Agent-tool message with N tool calls (where N is the number of relevant doctrines discovered).
 - MUST preserve doctrine alignment throughout the rewrite: named exports, no hooks in pure components, validation in `domain/`, `v.*` validators with indexes, `requireAuth` on non-public functions.
 - MUST run verification (`pnpm app:compile && pnpm app:test`) after each sub-step 5a→5b→5c→5d→5e. If a sub-step breaks green, fix before moving on — never pile up breakage.
 - MUST pause and wait for the user to run `npx convex dev` at step 5c before typechecking the Convex functions.

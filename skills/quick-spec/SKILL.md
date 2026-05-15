@@ -42,13 +42,12 @@ Work through planning in five substeps. Do them visibly so the user can interrup
 
 **1a. Skeleton.** List 3–7 high-level steps as bullet points. No detail yet — just the shape.
 
-**1b. Consult doctrine.** Identify which of the three doctrines the objective touches most directly:
+**1b. Consult doctrine.** Discover the project's doctrines via the same fallback as `architect-spec`:
 
-- Pure logic, validation, decisions → `docs/doctrine/domain-doctrine.md`
-- Schema, queries, mutations, auth, external APIs → `docs/doctrine/backend-doctrine.md`
-- Routes, components, hooks, styling → `docs/doctrine/frontend-doctrine.md`
+1. If `docs/doctrine/doctrine-manifest.yaml` exists, parse it. Each entry has `id`, `path`, `triggers`, and `summary`. Pick the 1-3 entries whose `triggers` match the objective (or whose `summary` reads as relevant).
+2. Else glob `docs/doctrine/**/*-doctrine.md`. Pick the 1-3 doctrines whose names suggest relevance to the objective.
 
-Read the relevant doctrine section(s). Note any rules that constrain the implementation (e.g. "components must be pure — hooks move to `src/hooks/`").
+Read the selected doctrine file(s) in full. Note any rules that constrain the implementation (e.g. "components must be pure — hooks move to `src/hooks/`").
 
 **1c. Expand.** For each skeleton bullet, add concrete detail: file paths, function names, import changes.
 
