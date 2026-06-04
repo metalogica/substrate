@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/substrate:diagnose <error-context>` — targeted bug-fix loop. Takes a known error (message + optional file:line / timestamp / repro steps), matches it to the relevant doctrine via a path-layer + manifest-trigger + symbol-search composite scored 0–9, presents ranked hypotheses with cited doctrine rules, implements the chosen fix, then verifies BOTH the green gate (`compile`/`lint`/`test`) AND that the original error no longer reproduces. Loops on failure with accumulated context; escalates to `/substrate:architect-spec` when the fix crosses 3+ layers or needs new abstractions.
+
 ### Fixed
 
 - `/substrate:architect-spec` — orchestration now runs at skill level (depth 0). The previous design routed work through an `architect-spec` *subagent* (depth 1) that was supposed to dispatch `doctrine-architect` children (depth 2), but the Claude Code harness depth-cap forbids depth-2 spawn — so the fan-out silently degraded to single-context self-loading on every invocation, losing the parallel-architect cross-check. The skill now absorbs the full workflow (Q&A → parallel dispatch → mediation → composition → write), mirroring how `/substrate:migrate` already operates.
+- `/substrate:synthesize-session` — global `tbd` binaries (e.g. `pnpm add -g tbd`) are now detected via `command -v tbd`, not just `npx --no-install`. When tracker is `tbd`, beads (Step 9) and doctrine amendments (Step 5) write to the tracker via ephemeral `mktemp` tempfiles + unlink; zero markdown queue artifacts land under `docs/tasks/ongoing/**`. The synthesis report at `docs/tasks/completed/<feature>/synthesis-<date>.md` is the only sanctioned `.md` write under `tbd`.
 
 ### Removed
 
