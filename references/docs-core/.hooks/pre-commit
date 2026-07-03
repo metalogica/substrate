@@ -1,0 +1,5 @@
+#!/bin/sh
+# Gate 1 (mechanical): doctrine manifest coverage · path · pointer.
+# Activate once per clone:  git config core.hooksPath .hooks
+# Bypass in an emergency:   git commit --no-verify   (CI still enforces it)
+exec bash docs/scripts/doctrine-lint.sh

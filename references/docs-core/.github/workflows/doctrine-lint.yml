@@ -1,0 +1,12 @@
+name: doctrine-lint
+# Gate 1 — the unbypassable mechanical gate. Zero-dep bash; no toolchain setup needed.
+on:
+  push:
+  pull_request:
+jobs:
+  doctrine-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: doctrine-lint (coverage · path · pointer)
+        run: bash docs/scripts/doctrine-lint.sh

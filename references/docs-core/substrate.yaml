@@ -1,0 +1,23 @@
+# substrate.yaml — declared verification gates for this repo.
+#
+# The substrate engine (/substrate:execute, /substrate:quick-spec, /substrate:diagnose)
+# reads these and runs them; it NEVER guesses your toolchain. Fill each gate with YOUR
+# command. Order run: gate.compile → gate.test → gate.lint. A missing file or a missing
+# required key aborts execution with an explanation (no probing, no fallback).
+version: 1
+gate:
+  compile: "{{GATE_COMPILE}}"   # e.g. tsc --noEmit  ·  cargo build  ·  uv run mypy .
+  test:    "{{GATE_TEST}}"      # e.g. vitest run    ·  cargo test   ·  uv run pytest -q
+  lint:    "{{GATE_LINT}}"      # e.g. eslint .      ·  cargo clippy ·  uv run ruff check .
+
+# --- Optional: parallel-bead execution (see agents-parallel-execution-doctrine.md) ---
+# out-of-band gates (e2e, device, paid service) — not run on every step:
+#  out-of-band:
+#    - name: e2e
+#      command: "<command>"
+#      when: phase-tagged      # phase-tagged | manual
+#
+# worktree-seed: []            # gitignored paths (globs) to copy into each fresh worktree
+# toolchain-pin:
+#   install: "<command>"       # per-worktree dependency install
+#   env: {}                    # resolved env injected into gate commands

@@ -1,0 +1,31 @@
+# Doctrine manifest — the single source of truth for this repo's doctrines and their
+# required cross-links. Validated by docs/scripts/doctrine-lint.sh (coverage · path ·
+# pointer), enforced by .hooks/pre-commit and CI.
+#
+# Add a new doctrine HERE (and create the file + at least one pointer to it).
+#
+# Each entry:
+#   id:         slug — the file MUST be docs/doctrine/<id>-doctrine.md
+#   path:       the doctrine file (must exist)
+#   pointers:   docs that MUST link to this doctrine (each must exist + contain the basename)
+#   summary:    one-line "why read this" (also read by substrate skills for dispatch)
+#   triggers:   brief-content keywords that activate this doctrine (dispatch hint; optional)
+#   layer-hint: domain | backend | frontend | infra | cross-cutting (optional)
+#
+# Formatting is strict (a tiny zero-dep parser reads it): 2-space indent, one "- id:"
+# per entry, `pointers` as an inline [a, b] list.
+
+doctrines:
+  - id: agents
+    path: docs/doctrine/agents-doctrine.md
+    pointers: [AGENTS.md]
+    summary: The doctrine on doctrines — authoring rules, the manifest as single source of truth, the two enforcement gates, and the drift-evaluation protocol.
+    triggers: [doctrine, manifest, drift, lint, gate]
+    layer-hint: cross-cutting
+
+  - id: agents-parallel-execution
+    path: docs/doctrine/agents-parallel-execution-doctrine.md
+    pointers: [AGENTS.md]
+    summary: Parallel-bead orchestration — single-writer tracker, integration branch + merge-on-green, file-disjoint waves, gate-before-close, two-stage gate, worktree hygiene.
+    triggers: [parallel, worktree, wave, epic, integration branch, merge-on-green]
+    layer-hint: cross-cutting
