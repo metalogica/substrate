@@ -1,10 +1,15 @@
-tbd_format: f03
+tbd_format: f06
 tbd_version: 0.1.26
+# tbd_upgrades: tbd versions that have run `tbd setup` in this repo (oldest first);
+# tbd_version above is the most recent. Informational; updated automatically by setup.
+tbd_upgrades:
+  - version: 0.1.26
 display:
   id_prefix: sub
 sync:
   branch: tbd-sync
   remote: origin
+  storage: git-common-dir-v1
 settings:
   auto_sync: false
   doc_auto_sync_hours: 24
