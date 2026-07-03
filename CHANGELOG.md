@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-03
+
 ### Added
 
+- `/substrate:adopt` — install substrate's stack-agnostic docs/doctrine/gate kernel onto an existing repo of any language/stack, **without** scaffolding an opinionated framework. Ships `references/docs-core/` (canonical `AGENTS.md` + `CLAUDE.md` symlink, the enforced doctrine manifest + zero-dep `doctrine-lint.sh`, the `agents` meta-doctrine + `agents-parallel-execution` doctrine, the SDD protocol, a pre-commit hook + CI workflow) and wires `substrate.yaml` to the repo's own compile/test/lint gate. The symmetric opposite of `/substrate:migrate`; leaves `doctrine-lint` green. Bumps the user-facing skill surface to ten.
 - `/substrate:diagnose <error-context>` — targeted bug-fix loop. Takes a known error (message + optional file:line / timestamp / repro steps), matches it to the relevant doctrine via a path-layer + manifest-trigger + symbol-search composite scored 0–9, presents ranked hypotheses with cited doctrine rules, implements the chosen fix, then verifies BOTH the green gate (`compile`/`lint`/`test`) AND that the original error no longer reproduces. Loops on failure with accumulated context; escalates to `/substrate:architect-spec` when the fix crosses 3+ layers or needs new abstractions.
 
 ### Changed
