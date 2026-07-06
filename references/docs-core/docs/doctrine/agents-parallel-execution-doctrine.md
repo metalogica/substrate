@@ -5,6 +5,20 @@
 > (first use: `<epic-slug>`). Stack-agnostic: every build/test/lint command below resolves
 > to the repo's **declared gate** in `substrate.yaml`, never a hardcoded toolchain.
 
+## Where the DAG comes from — epic identity is a label
+
+A spec becomes a bead DAG via `/substrate:graph-spec` (run automatically at the end of
+`/substrate:architect-spec`, or standalone on any existing spec). Every bead it creates — the
+epic container and its children — is tagged with the **canonical epic label `epic:<slug>`**,
+where `<slug>` is the spec's `docs/tasks/ongoing/<slug>/` directory. That label, not the
+parent link, is the join key: `/substrate:synthesize-session` stamps the *same* label on
+session-discovered follow-up beads, so planned and discovered work render as one epic card.
+
+**See the shape before you dispatch.** `bash docs/scripts/bead-graph.sh --epic <slug>` prints
+the topological waves (every id in a wave is safe to run in parallel; waves run in order);
+`--format mermaid` emits a paste-able `graph TD`. This is the parallel-execution plan — read
+it first, then apply the policies below.
+
 ## Roles
 
 - **Orchestrator** (the main session): owns the tracker *and* git integration. The only

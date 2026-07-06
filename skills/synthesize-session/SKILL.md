@@ -271,6 +271,7 @@ type: devx-human | devx-agent | bug | drift | feature | optimisation
 status: open
 effort: XS | S | M | L
 blocked-by: []
+epic: <feature>
 originating-spec: docs/tasks/completed/<feature>/<feature>-spec.md
 originating-session: <YYYY-MM-DD>
 cross-repo: in-repo | cross-repo | mixed
@@ -366,6 +367,8 @@ Append `7` to `completed-steps`.
 
 4. On success: encode `blocked-by:` in each actionable bead's frontmatter. Append `8` to `completed-steps`.
 
+Because every bead carries the `epic:<feature>` label (Step 7), the persisted graph — planned beads from `/substrate:graph-spec` plus these session-discovered ones — is inspectable as one card via `bash docs/scripts/bead-graph.sh --epic <feature>` (waves) or `--format mermaid`.
+
 Topological layers, conceptually:
 
 ```
@@ -401,7 +404,7 @@ This is the only step that performs bead I/O. Step 7 produced in-memory records;
    - **`n`**: skip persistence entirely. Warn the user: *"Bead bodies were composed but not persisted. Because this repo is configured with `bead-tracker: tbd`, nothing is on disk. Re-run this skill or copy the previewed bodies above to recover."*
 3. **Create new beads.** For each approved `new-beads` record, in DAG order (so `blocked-by:` references resolve to already-assigned IDs), then each `parked-questions` record:
    1. Render the record body to a tempfile: `tmp=$(mktemp -t synth-bead-XXXXXX)` then write the markdown body into `$tmp`.
-   2. Invoke `tbd create --type <type> --file "$tmp" "<title>"` — substitute `npx --no-install get-tbd` for `tbd` if no global binary is on `PATH`. For parked-questions, the type is `open-question` and the create command should set `status: parked` (via `--status` flag if supported, else via frontmatter the tbd implementation reads).
+   2. Invoke `tbd create --type <type> -l "epic:<feature>" --file "$tmp" "<title>"` — substitute `npx --no-install get-tbd` for `tbd` if no global binary is on `PATH`. The `epic:<feature>` label is the **canonical epic identity** (same one `/substrate:architect-spec` → `/substrate:graph-spec` stamped on the planned beads), so session-discovered follow-up work groups under the *same* epic card. If an epic bead for this feature already exists — `tbd list --type epic --label "epic:<feature>"` returns one — also pass `--parent <epic-id>` so the bead nests as a subtask. For parked-questions, the type is `open-question` and the create command should set `status: parked` (via `--status` flag if supported, else via frontmatter the tbd implementation reads).
    3. Capture the assigned tbd ID from stdout. Record it in `{interim-id → tbd-id}`.
    4. `unlink "$tmp"` — unconditional cleanup. The skill must not leave tempfiles behind even on partial failure (use `trap` or equivalent).
 4. **Apply updates.** For each approved `update-existing` record: invoke the tbd update path (`tbd edit <id>` or `tbd append <id> --file <tmp>` depending on tbd version) with the append-block. Same tempfile + unlink discipline. If tbd has no native append, fall back to `tbd show <id> > $tmp && cat append-block >> $tmp && tbd update <id> --file $tmp` and unlink after.

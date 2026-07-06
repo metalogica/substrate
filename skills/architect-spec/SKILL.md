@@ -1,6 +1,6 @@
 ---
 name: architect-spec
-description: "Turn a manually written brief into an executable multi-phase spec with verification gates. Invoke with a brief path (docs/tasks/ongoing/<feature>/<feature>-brief.md). Runs Socratic Q&A inline, discovers the project's doctrines via manifest or glob, dispatches one `doctrine-architect` subagent per relevant doctrine in parallel, composes their structured recommendations into a spec following the SDD protocol, and writes docs/tasks/ongoing/<feature>/<feature>-spec.md. Hands off to /substrate:execute for gated execution in a fresh session."
+description: "Turn a manually written brief into an executable multi-phase spec with verification gates. Invoke with a brief path (docs/tasks/ongoing/<feature>/<feature>-brief.md). Runs Socratic Q&A inline, discovers the project's doctrines via manifest or glob, dispatches one `doctrine-architect` subagent per relevant doctrine in parallel, composes their structured recommendations into a spec following the SDD protocol, and writes docs/tasks/ongoing/<feature>/<feature>-spec.md. Then graphs the spec into a bead DAG (epic:<feature>) via /substrate:graph-spec so it can be executed in parallel. Hands off to /substrate:execute for gated execution in a fresh session."
 ---
 
 # /substrate:architect-spec
@@ -148,14 +148,27 @@ Feature-specific verification should target the new files only: `pnpm app:test t
 
 Write the finished spec to `docs/tasks/ongoing/<feature>/<feature>-spec.md` (sibling of the brief).
 
-### Step 9 — Hand off to execution
+### Step 9 — Graph the Spec (decompose into a bead DAG)
+
+Before returning control, decompose the spec into a directed acyclic graph of beads so the work can be executed in parallel. Invoke `/substrate:graph-spec` on the spec you just wrote, in **this same session** (both run at skill level, depth 0):
+
+```
+/substrate:graph-spec docs/tasks/ongoing/<feature>/<feature>-spec.md
+```
+
+That skill parses the Prompt Execution Strategy, turns each step into a bead, infers `blocked-by:` edges, cycle-checks, and persists an epic + child beads under the canonical label `epic:<feature>` — then prints the wave shape via `docs/scripts/bead-graph.sh`. If the project has no bead-tracker configured, `graph-spec` falls back to markdown beads; either way the user sees the graph before handoff.
+
+Graphing is best-effort at this stage: if `graph-spec` REFUSES (e.g. no tracker and the user declines markdown beads), note it and continue to the handoff — the spec itself is still valid and executable phase-by-phase.
+
+### Step 10 — Hand off to execution
 
 Print this message verbatim to the user:
 
 ```
-✔ Spec written.
+✔ Spec written and graphed.
 
-Path: docs/tasks/ongoing/<feature>/<feature>-spec.md
+Path:  docs/tasks/ongoing/<feature>/<feature>-spec.md
+Beads: epic:<feature>  (inspect: bash docs/scripts/bead-graph.sh --epic <feature>)
 
 Open a NEW terminal in this directory and run:
 
@@ -163,7 +176,9 @@ Open a NEW terminal in this directory and run:
 
 The fresh session picks up the spec and executes it phase-by-phase with
 verification gates. Opening a new terminal (not /clear) gives the executor
-a clean context window — critical for long specs.
+a clean context window — critical for long specs. To run the bead DAG in
+parallel instead, hand it to the orchestrator per the parallel-execution
+doctrine (docs/doctrine/agents-parallel-execution-doctrine.md).
 ```
 
 Do NOT execute the spec yourself in this session. The handoff is the whole point.
@@ -179,7 +194,7 @@ Do NOT execute the spec yourself in this session. The handoff is the whole point
 - MUST NOT invent facts during composition — if architects didn't return a piece, ask the user or re-dispatch the relevant architect.
 - MUST NOT execute the spec. This skill only produces it.
 - MUST NOT invite the user to run `/substrate:execute` in the SAME session — the fresh-context benefit is the core design.
-- MUST NOT write code or files beyond the spec document itself.
+- MUST NOT write code or files beyond the spec document — the sole exception is Step 9, which delegates to `/substrate:graph-spec` to persist the spec's bead DAG (an epic + child beads in the tracker, never feature code). Graphing the spec is not executing it.
 - MUST use the naming convention `<feature>-spec.md` per `brief-format.md` §3.
 - MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on every Q&A question. If the user picks `default`, choose a reasonable value and note the default in the composed spec's Change Log so it's reviewable.
 - SHOULD stay concise during Q&A — this is the user's time, not a chatbot exercise.

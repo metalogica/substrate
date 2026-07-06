@@ -8,12 +8,13 @@ A Claude Code **plugin** that scaffolds full-stack Vite + Convex + Clerk applica
 
 The plugin exposes:
 
-- **10 user-facing skills** under `skills/`:
+- **11 user-facing skills** under `skills/`:
   - `/substrate:init` — scaffold a new project in an empty directory (stage 1)
   - `/substrate:adopt` — install the stack-agnostic docs/doctrine/gate kernel onto an *existing* repo of any language (symmetric opposite of `migrate`); no opinionated stack, wires `substrate.yaml` to the repo's own compile/test/lint
   - `/substrate:migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
   - `/substrate:deploy` — Clerk + Vercel + first live deploy (stage 3)
-  - `/substrate:architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs
+  - `/substrate:architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs, then graphs them into a bead DAG
+  - `/substrate:graph-spec <spec>` — "Graph the Spec": decompose a written spec into a DAG of tbd beads (epic + children under label `epic:<slug>`, `blocked-by:` edges, Kahn cycle-check), rendered via `docs/scripts/bead-graph.sh`. Called automatically by `architect-spec`; runnable standalone. Produces the DAG only — the parallel-execution doctrine's orchestrator consumes it.
   - `/substrate:execute <spec>` — executes a spec phase-by-phase with verification gates
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
   - `/substrate:diagnose <error-context>` — targeted bug-fix loop: matches the error to a doctrine (path-layer + manifest-trigger + symbol-search composite), generates ranked hypotheses, fixes, verifies both green gate AND repro-no-longer-fires, commits
@@ -80,12 +81,17 @@ To test scaffolding in isolation, `cd` into a fresh sandbox directory and invoke
 substrate/
 ├── .claude-plugin/plugin.json     # plugin manifest
 ├── agents/                         # 4 subagents (markdown with YAML frontmatter)
-├── skills/                         # 6 user-facing skills
+├── skills/                         # 11 user-facing skills
 │   ├── init/SKILL.md
+│   ├── adopt/SKILL.md
 │   ├── migrate/SKILL.md
 │   ├── architect-spec/SKILL.md
+│   ├── graph-spec/SKILL.md         # decompose a spec into a bead DAG
 │   ├── execute/SKILL.md
 │   ├── quick-spec/SKILL.md
+│   ├── diagnose/SKILL.md
+│   ├── synthesize-session/SKILL.md
+│   ├── add-doctrine/SKILL.md
 │   └── deploy/SKILL.md
 ├── references/
 │   ├── doctrines/                  # copied to target project's docs/doctrine/

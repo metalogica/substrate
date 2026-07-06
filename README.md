@@ -95,7 +95,7 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 /substrate:migrate         ← stage 2: architects analyze prototype, move src/, draft Convex
     │
     ▼
-/substrate:quick-spec  OR  /substrate:architect-spec + /substrate:execute   ← iterate features
+/substrate:quick-spec  OR  /substrate:architect-spec (→ graph-spec bead DAG) + /substrate:execute   ← iterate features
     │
     ▼
 /substrate:synthesize-session   ← terminal phase: capture session learning into doctrine fixes + beads
@@ -110,7 +110,8 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 |-------|---------|
 | `/substrate:init` | Scaffold a new project in an empty directory. Runs product-focused Socratic Q&A, writes the kernel (domain + tests + docs + doctrines), generates the Gemini AI Studio Build prompt + optional runtime AI system prompt. |
 | `/substrate:migrate` | Migrate a Gemini AI Studio prototype (dropped in `prototype/`) into the substrate kernel. Discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` subagent per relevant doctrine in parallel; you approve a migration plan; files move into `src/` with doctrine alignment and a drafted Convex backend. |
-| `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` per relevant doctrine in parallel, composes an executable spec following the SDD protocol. |
+| `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` per relevant doctrine in parallel, composes an executable spec following the SDD protocol, then graphs it into a bead DAG via `graph-spec`. |
+| `/substrate:graph-spec <spec>` | **Graph the Spec.** Decompose a written spec into a directed acyclic graph of `tbd` beads — one epic + child beads under the canonical label `epic:<slug>`, wired by `blocked-by:` edges inferred from which files/symbols each step consumes vs. creates, cycle-checked via Kahn. Renders the wave shape with `docs/scripts/bead-graph.sh` (waves / mermaid / dot) so parallel vs. sequential structure is visible. Called automatically by `architect-spec`; runnable standalone on any spec. Produces the DAG only — the parallel-execution doctrine's orchestrator runs it. |
 | `/substrate:execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. |
 | `/substrate:quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/substrate:architect-spec` for anything big. |
 | `/substrate:synthesize-session` | Terminal phase after `/substrate:execute`. Scans the session transcript + `git log` + doctrines for drift, applies up to 5 atomic doctrine-fix commits, queues larger amendments for human triage, drafts dependency-ordered beads with self-contained state-transfer prompts, and writes a synthesis report with a top-3-to-5 Pareto cut. Idempotent. |
