@@ -33,6 +33,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Tolerate both `--epic <slug>` and `--epic epic:<slug>` — the script adds the `epic:` prefix.
+EPIC="${EPIC#epic:}"
+
 # Resolve the tbd CLI: global binary, else local get-tbd via npx.
 if command -v tbd >/dev/null 2>&1; then
   TBD="tbd"
@@ -48,7 +51,8 @@ LIST_ARGS="--status $STATUS_FILTER"
 
 RAW=$($TBD list $LIST_ARGS --no-sync 2>/dev/null)
 # Bead rows start with an id token `<prefix>-<alnum>`; skip the header + "N issue(s)" footer.
-NODES=$(printf '%s\n' "$RAW" | grep -oE '^[[:alnum:]]+-[[:alnum:]]+' | sort -u)
+# Drop `[epic]` container rows — the epic is the card/grouping, not a task in a wave.
+NODES=$(printf '%s\n' "$RAW" | grep -vE '\[epic\]' | grep -oE '^[[:alnum:]]+-[[:alnum:]]+' | sort -u)
 
 if [ -z "$NODES" ]; then
   scope="all open beads"; [ -n "$EPIC" ] && scope="epic:$EPIC"
