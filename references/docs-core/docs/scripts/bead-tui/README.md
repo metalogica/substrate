@@ -24,8 +24,8 @@ docs/scripts/bead-tui.sh --list-views    # print discovered views, exit
 ```
 
 Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **q / Ctrl-C** quit.
-Flags: `--tbd <slug>`, `--fixture <path>`, `--once`, `--list-views`, `--interval <ms>` (poll
-cadence, default 1500).
+Flags: `--tbd <slug>`, `--fixture <path>`, `--once`, `--list-views`, `--interval <ms>` (idle gap
+between polls, default 800).
 
 ## Views (tabs)
 
@@ -41,8 +41,11 @@ flash `← NEW`; a bead that just closed flashes `✓ done`; beads unblock as th
 
 **How liveness works:** tbd stores bead data under `.git` (a `tbd-sync` worktree), not in the
 working tree, so there's no file mtime to watch. bead-tui therefore **content-polls** in tbd
-mode — each interval it runs two cheap bulk queries (`tbd list --all` + `tbd blocked`) and
-re-renders on any change. Fixture mode watches the file's mtime instead.
+mode — it runs two bulk queries (`tbd list --all` + `tbd blocked`), in parallel, and re-renders
+on any change. Fixture mode watches the file's mtime instead. Because tbd's CLI is slow
+(~2–3 s per call, git-native), every call is **async** and self-paced: the fetch runs in the
+background so keypresses stay instant and the spinner keeps moving — the view just updates when
+fresh data lands (typically every ~3–4 s).
 
 ## What you see
 
