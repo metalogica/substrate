@@ -107,7 +107,7 @@ Guard the symlink: if `cp -R` left `CLAUDE.md` as a regular copy (some `cp` vari
 ### Step 6 — Wire the pre-commit hook
 
 ```bash
-chmod +x docs/scripts/doctrine-lint.sh docs/scripts/bead-graph.sh .hooks/pre-commit
+chmod +x docs/scripts/doctrine-lint.sh docs/scripts/bead-graph.sh docs/scripts/bead-tui.sh .hooks/pre-commit
 git config core.hooksPath .hooks
 ```
 

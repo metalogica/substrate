@@ -1,36 +1,48 @@
 # bead-tui
 
-A **live** terminal view of a bead DAG. It re-renders as tbd state evolves — beads change
-status, new beads appear, blocked beads unblock — so you can watch an epic fill in while a
-parallel fleet works it. Companion to `bead-graph.sh` (which prints a one-shot graph);
-this one stays open and updates.
-
-Zero runtime deps — Node built-ins only, like `bead-graph.sh`.
+A **live** terminal view of a project's bead DAGs. It re-renders as tbd state evolves —
+beads change status, blocked beads unblock, new ones appear — so you can watch an epic fill
+in while a parallel fleet works it. Companion to `bead-graph.sh` (which prints a one-shot
+graph); this one stays open and updates. Zero runtime deps — Node built-ins only.
 
 ## Run
 
 ```bash
-# Live view of the bundled demo fixture (no tbd needed):
-node references/docs-core/docs/scripts/bead-tui/watch.mjs
+# Auto-load the latest active epic; press Tab to cycle epics + unassigned:
+docs/scripts/bead-tui.sh
+#   (equivalently: node docs/scripts/bead-tui/watch.mjs)
 
-# Live view of a real epic from tbd:
-node references/docs-core/docs/scripts/bead-tui/watch.mjs --tbd tui-viz
+# Pin one epic:
+docs/scripts/bead-tui.sh --tbd <epic-slug>
 
-# One frame then exit (CI / quick check):
-node references/docs-core/docs/scripts/bead-tui/watch.mjs --tbd tui-viz --once
+# A specific fixture file (no tbd needed):
+docs/scripts/bead-tui.sh --fixture docs/scripts/bead-tui/fixture.json
+
+# Non-interactive:
+docs/scripts/bead-tui.sh --once          # render the default view once, exit (CI)
+docs/scripts/bead-tui.sh --list-views    # print discovered views, exit
 ```
 
-Flags: `--tbd <epic-slug>` (source from `tbd list --label epic:<slug>`), `--fixture <path>`
-(a specific fixture file), `--once` (render once, exit 0), `--interval <ms>` (poll cadence,
-default 1000).
+Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **q / Ctrl-C** quit.
+Flags: `--tbd <slug>`, `--fixture <path>`, `--once`, `--list-views`, `--interval <ms>` (poll
+cadence, default 1500).
+
+## Views (tabs)
+
+- **One tab per epic** (`epic:<slug>` label grouping), newest first — the latest is active on
+  launch. Fully-closed (done) epics are hidden; pin one with `--tbd <slug>` to see it anyway.
+- **`unassigned`** — beads carrying no `epic:` label.
 
 ## Watch it evolve
 
-- **Fixture mode:** edit `fixture.json` in another pane — flip a `status`, add a node/edge —
-  and the view updates within one poll interval. New ids flash `← NEW`; a bead that just
-  closed flashes `✓ done`.
-- **tbd mode:** in another pane, `tbd update <id> --status in_progress` or `tbd close <id>`,
-  and the graph re-renders. The tool polls `.tbd/` mtime and only re-fetches on change.
+In another pane, change tbd state — `tbd update <id> --status in_progress`, `tbd close <id>`,
+or create/label a new bead — and the active tab re-renders within one poll interval. New ids
+flash `← NEW`; a bead that just closed flashes `✓ done`; beads unblock as their blockers close.
+
+**How liveness works:** tbd stores bead data under `.git` (a `tbd-sync` worktree), not in the
+working tree, so there's no file mtime to watch. bead-tui therefore **content-polls** in tbd
+mode — each interval it runs two cheap bulk queries (`tbd list --all` + `tbd blocked`) and
+re-renders on any change. Fixture mode watches the file's mtime instead.
 
 ## What you see
 
@@ -48,10 +60,13 @@ Glyphs: `✓ closed`, `▶ in_progress`, `○ open`, `⊘ blocked` (an open bead
 unclosed blocker). Waves and the `blocked` derivation follow
 `docs/doctrine/agents-parallel-execution-doctrine.md`.
 
-## Why waves, not drawn arrows
+## Notes & limits
 
-An earlier prototype tried a left-to-right graph with routed ASCII arrows. In a terminal
-that runs out of width fast and forces long edges to cross node columns — it was unreadable
-at seven nodes. Top-to-bottom waves with inline `← blockers` is width-stable, DAG-safe
-(fan-in is just `← a, b, c`), and reuses the layering `bead-graph.sh` already computes.
-A drawn-rail renderer (git-log-graph style) is a possible future `--graph` mode.
+- **Startup** enumerates epics with a few `tbd` calls (a `show` per epic for its slug); on a
+  project with many epics the first paint can take a few seconds (a "discovering beads…" line
+  shows meanwhile). Steady-state polling is just the two bulk calls.
+- **Why waves, not drawn arrows:** an early prototype tried a left-to-right graph with routed
+  ASCII arrows; in a terminal that runs out of width and forces long edges to cross node
+  columns — unreadable at seven nodes. Top-to-bottom waves with inline `← blockers` is
+  width-stable and DAG-safe. A drawn-rail renderer (git-log-graph style) is a possible future
+  `--graph` mode.

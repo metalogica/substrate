@@ -1,18 +1,20 @@
 #!/usr/bin/env node
-// bead-tui — a live, terminal view of a bead DAG that re-renders as tbd state
-// evolves: beads change status, new beads appear, the graph fills in. Zero runtime
-// deps (Node built-ins only), so it ships wherever bead-graph.sh ships.
+// bead-tui — a live, terminal view of a project's bead DAGs that re-renders as tbd
+// state evolves: beads change status, blocked beads unblock, new ones appear. Zero
+// runtime deps (Node built-ins only), so it ships wherever bead-graph.sh ships.
 //
-//   node watch.mjs                       # live view of the bundled fixture
-//   node watch.mjs --tbd <epic-slug>     # live view of epic:<slug> from tbd
-//   node watch.mjs --tbd tui-viz --once  # render one frame and exit (for CI/verify)
-//   node watch.mjs --fixture path.json   # live view of a specific fixture file
+//   node watch.mjs                       # auto-load the latest epic; Tab to cycle
+//   node watch.mjs --tbd <epic-slug>     # pin one epic
+//   node watch.mjs --fixture path.json   # a specific fixture file
+//   node watch.mjs --once                # render the default view once, exit (CI)
+//   node watch.mjs --list-views          # print discovered views, exit
 //
-// Topology is Kahn's waves (same layering bead-graph.sh computes). Rendering is the
-// "waves + rails + inline ← blockers" layout de-risked in the prototype: top-to-bottom,
-// width-stable, DAG-safe. `blocked` is derived (an open bead with an unclosed blocker).
+// Tabs (interactive TTY only): Tab / →  next · Shift-Tab / ←  prev · q / Ctrl-C quit.
+// Views = one per epic (newest first) + an "unassigned" tab (beads with no epic: label).
+// Topology is Kahn's waves (as bead-graph.sh computes); `blocked` is derived (an open
+// bead with an unclosed blocker). Rendering is top-to-bottom waves + inline ← blockers.
 
-import { readFileSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -23,48 +25,100 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? (argv[i + 1] ?? true) : undefined; };
 const ONCE = argv.includes('--once');
-const EPIC = flag('--tbd');                                   // epic slug, or undefined for fixture mode
-const FIXTURE = flag('--fixture') || join(HERE, 'fixture.json');
-const INTERVAL = Number(flag('--interval')) || 1000;
+const LIST_VIEWS = argv.includes('--list-views');
+const EPIC = flag('--tbd');                                   // pin a single epic
+const FIXTURE_ARG = flag('--fixture');                        // pin a fixture file
+const DEFAULT_FIXTURE = join(HERE, 'fixture.json');
+const INTERVAL = Number(flag('--interval')) || 1500;   // tbd mode content-polls (2 procs/tick) — keep it gentle
+
+function die(msg) { restore(); process.stderr.write(`bead-tui: ${msg}\n`); process.exit(1); }
 
 // ---- tbd resolver (mirror bead-graph.sh: prefer global tbd, else local get-tbd) --
-function tbdRunner() {
-  try { execFileSync('tbd', ['--version'], { stdio: 'ignore' }); return (a) => execFileSync('tbd', a, { encoding: 'utf8' }); }
-  catch { /* fall through */ }
-  try { execFileSync('npx', ['--no-install', 'get-tbd', '--version'], { stdio: 'ignore' });
-    return (a) => execFileSync('npx', ['--no-install', 'get-tbd', ...a], { encoding: 'utf8' }); }
-  catch { die('no tbd CLI found (need `tbd` on PATH or a local get-tbd install).'); }
-}
-function die(msg) { process.stderr.write(`bead-tui: ${msg}\n`); process.exit(1); }
-
-// ---- data sources → { nodes:[{id,title,status}], edges:[{from,to}] } ----------
-function fromFixture() {
-  const g = JSON.parse(readFileSync(FIXTURE, 'utf8'));
-  return { nodes: g.nodes, edges: g.edges };
-}
-
-function fromTbd(slug) {
-  const tbd = tbdRunner();
-  const jlist = (extra) => {
-    const out = tbd(['list', '--label', `epic:${slug}`, ...extra, '--json', '--no-sync']).trim();
-    try { return JSON.parse(out); } catch { return []; }
-  };
-  // default list = open + in_progress; add closed so completed beads still render.
-  const rows = [...jlist([]), ...jlist(['--status', 'closed'])];
-  const seen = new Map();
-  for (const r of rows) if (r.kind !== 'epic' && !seen.has(r.id)) seen.set(r.id, { id: r.id, title: r.title, status: r.status });
-  const nodes = [...seen.values()];
-  if (!nodes.length) die(`no beads found for epic:${slug} (is it seeded and labelled?).`);
-  const ids = new Set(nodes.map((n) => n.id));
-  const edges = [];
-  for (const n of nodes) {
-    let dep = {};
-    try { dep = JSON.parse(tbd(['dep', 'list', n.id, '--json', '--no-sync'])); } catch { /* none */ }
-    for (const b of dep.blockedBy || []) {
-      const blocker = typeof b === 'string' ? b : b.id;   // tolerate string | {id}
-      if (ids.has(blocker)) edges.push({ from: blocker, to: n.id });
+let _tbd = null;
+function tbd(a) {
+  if (!_tbd) {
+    try { execFileSync('tbd', ['--version'], { stdio: 'ignore' }); _tbd = (x) => execFileSync('tbd', x, { encoding: 'utf8' }); }
+    catch {
+      try { execFileSync('npx', ['--no-install', 'get-tbd', '--version'], { stdio: 'ignore' });
+        _tbd = (x) => execFileSync('npx', ['--no-install', 'get-tbd', ...x], { encoding: 'utf8' }); }
+      catch { return null; }
     }
   }
+  try { return _tbd(a); } catch { return null; }
+}
+const tbdAvailable = () => tbd(['--version']) !== null;
+function jparse(s, fallback) { try { return JSON.parse(s); } catch { return fallback; } }
+const tlist = (extra) => jparse(tbd(['list', ...extra, '--json', '--no-sync']) || '[]', []);
+const tshow = (id) => jparse(tbd(['show', id, '--json', '--no-sync']) || '{}', {});
+const tblocked = () => jparse(tbd(['blocked', '--json', '--no-sync']) || '[]', []);
+const firstId = (s) => (typeof s === 'string' ? s : s?.id || '').trim().split(/\s/)[0] || null;  // "sub-x ◐ title" → "sub-x"
+const basename = (p) => p.split('/').pop();
+
+// ---- bulk snapshot: TWO tbd calls for the whole repo (cheap, refetched on change) --
+//   SNAP.rows: id → {id,title,status,kind}   ·   SNAP.edges: childId → [blockerIds]
+let SNAP = null;
+function refreshSnapshot() {
+  const rows = new Map();
+  for (const r of tlist(['--all'])) rows.set(r.id, { id: r.id, title: r.title, status: r.status, kind: r.kind });
+  const edges = new Map();
+  for (const b of tblocked()) edges.set(b.id, (b.blockedBy || []).map(firstId).filter(Boolean));
+  SNAP = { rows, edges };
+}
+const epicSignature = () => [...SNAP.rows.values()].filter((r) => r.kind === 'epic').map((r) => r.id).sort().join(',');
+
+// ---- membership: slower (per-epic show for slug, per-slug list). Refetched only
+//   when the set of epic containers changes, not on every bead status change. -----
+//   MEMBERSHIP.epics: [{slug,ts}] newest-first · memberIds: slug→Set · unassigned: Set
+let MEMBERSHIP = null;
+function refreshMembership() {
+  const epicRows = [...SNAP.rows.values()].filter((r) => r.kind === 'epic');
+  const slugTs = new Map();                                           // dedupe containers sharing a slug; keep newest
+  for (const e of epicRows) {
+    const meta = tshow(e.id);
+    const slug = (meta.labels || []).map((l) => /^epic:(.+)$/.exec(l)?.[1]).find(Boolean);
+    if (!slug) continue;
+    const ts = meta.updated_at || meta.created_at || '';
+    if (!slugTs.has(slug) || slugTs.get(slug) < ts) slugTs.set(slug, ts);
+  }
+  const memberIds = new Map(); const claimed = new Set();
+  for (const slug of slugTs.keys()) {
+    const ids = new Set(tlist(['--label', `epic:${slug}`, '--all']).filter((r) => r.kind !== 'epic').map((r) => r.id));
+    memberIds.set(slug, ids); for (const id of ids) claimed.add(id);
+  }
+  const active = (slug) => [...(memberIds.get(slug) || [])].some((id) => SNAP.rows.get(id)?.status !== 'closed');
+  const epics = [...slugTs.entries()]
+    .filter(([slug]) => active(slug))                                 // hide fully-closed (done) epics from the tabs
+    .map(([slug, ts]) => ({ slug, ts })).sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  const unassigned = new Set([...SNAP.rows.values()].filter((r) => r.kind !== 'epic' && !claimed.has(r.id)).map((r) => r.id));
+  MEMBERSHIP = { epics, memberIds, unassigned };
+}
+
+function resolveViews() {
+  if (FIXTURE_ARG) return [{ key: `fixture:${basename(FIXTURE_ARG)}`, type: 'fixture', path: FIXTURE_ARG }];
+  if (EPIC) {                                                         // pinned single epic
+    refreshSnapshot();
+    const ids = new Set(tlist(['--label', `epic:${EPIC}`, '--all']).filter((r) => r.kind !== 'epic').map((r) => r.id));
+    if (!ids.size) die(`no beads found for epic:${EPIC} (is it seeded and labelled?).`);
+    MEMBERSHIP = { epics: [{ slug: EPIC, ts: '' }], memberIds: new Map([[EPIC, ids]]), unassigned: new Set() };
+    return [{ key: `epic:${EPIC}`, type: 'epic', slug: EPIC }];
+  }
+  if (tbdAvailable()) {
+    refreshSnapshot(); refreshMembership();
+    const views = MEMBERSHIP.epics.map((e) => ({ key: `epic:${e.slug}`, type: 'epic', slug: e.slug }));
+    if (MEMBERSHIP.unassigned.size) views.push({ key: 'unassigned', type: 'unassigned' });
+    if (views.length) return views;
+  }
+  return [{ key: `fixture:${basename(DEFAULT_FIXTURE)}`, type: 'fixture', path: DEFAULT_FIXTURE }];
+}
+
+// ---- graph for a view → { nodes:[{id,title,status}], edges:[{from,to}] } -----
+//   Spawn-free: built entirely from SNAP + MEMBERSHIP, so tab-switching is instant.
+function graphForView(view) {
+  if (view.type === 'fixture') { const g = jparse(readFileSync(view.path, 'utf8'), { nodes: [], edges: [] }); return { nodes: g.nodes, edges: g.edges }; }
+  const ids = view.type === 'unassigned' ? (MEMBERSHIP?.unassigned || new Set()) : (MEMBERSHIP?.memberIds.get(view.slug) || new Set());
+  const nodes = [...ids].map((id) => SNAP.rows.get(id)).filter(Boolean).map((r) => ({ id: r.id, title: r.title, status: r.status }));
+  const edges = [];
+  for (const id of ids) for (const b of (SNAP.edges.get(id) || [])) if (ids.has(b)) edges.push({ from: b, to: id });
   return { nodes, edges };
 }
 
@@ -73,7 +127,6 @@ function analyze({ nodes, edges }) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const blockers = new Map(nodes.map((n) => [n.id, []]));
   for (const { from, to } of edges) if (blockers.has(to)) blockers.get(to).push(from);
-  // waves
   const placed = new Set(); let remaining = nodes.map((n) => n.id); const waves = [];
   while (remaining.length) {
     const ready = remaining.filter((id) => blockers.get(id).every((b) => placed.has(b)));
@@ -82,7 +135,6 @@ function analyze({ nodes, edges }) {
     waves.push(ready);
     remaining = remaining.filter((id) => !ready.includes(id));
   }
-  // an open bead with any non-closed blocker is "blocked"
   const isClosed = (id) => byId.get(id)?.status === 'closed';
   const glyphStatus = (n) =>
     n.status === 'closed' ? 'closed'
@@ -91,19 +143,27 @@ function analyze({ nodes, edges }) {
   return { byId, blockers, waves, glyphStatus };
 }
 
-// ---- render (Renderer B: top-to-bottom waves + rails + inline ← blockers) ----
+// ---- render -----------------------------------------------------------------
 const GLYPH = { closed: '✓', in_progress: '▶', open: '○', blocked: '⊘' };
-const C = { closed: '\x1b[32m', in_progress: '\x1b[33m', open: '\x1b[90m', blocked: '\x1b[31m', dim: '\x1b[90m', title: '\x1b[37m', bold: '\x1b[1m', reset: '\x1b[0m' };
-const shortId = (id) => id.replace(/^sub-/, '');
+const C = { closed: '\x1b[32m', in_progress: '\x1b[33m', open: '\x1b[90m', blocked: '\x1b[31m', dim: '\x1b[90m', title: '\x1b[37m', bold: '\x1b[1m', rev: '\x1b[7m', unrev: '\x1b[27m', reset: '\x1b[0m' };
+const shortId = (id) => id.replace(/^[^-]+-/, '');    // drop the tbd prefix, whatever it is
+
+function tabBar(views, active) {
+  if (views.length < 2) return '';
+  return views.map((v, i) => (i === active ? `${C.rev} ${v.key} ${C.unrev}` : `${C.dim} ${v.key} ${C.reset}`)).join(' ');
+}
 
 function render(graph, meta, deltas) {
   const { byId, blockers, waves, glyphStatus } = analyze(graph);
-  const src = EPIC ? `epic:${EPIC}` : `fixture · ${FIXTURE.split('/').pop()}`;
   const spin = ['⟳', '⟲'][meta.frame % 2];
   const lines = [];
   lines.push('');
-  lines.push(`${C.bold}${src}${C.reset}                    ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}`);
+  const bar = tabBar(meta.views, meta.active);
+  if (bar) { lines.push(bar); lines.push(''); }
+  const nav = meta.views.length > 1 ? `${C.dim} · Tab/→ ←/Shift-Tab · q quit${C.reset}` : '';
+  lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
+  if (!graph.nodes.length) { lines.push(`${C.dim}(no beads)${C.reset}`); return lines.join('\n'); }
   waves.forEach((wave, w) => {
     const par = wave.length > 1 ? 'PARALLEL' : 'sequential';
     lines.push(`${C.dim}── wave ${w + 1} · ${wave.length} ${par} ${'─'.repeat(Math.max(0, 28 - par.length))}${C.reset}`);
@@ -125,62 +185,94 @@ function render(graph, meta, deltas) {
   return lines.join('\n');
 }
 
-// ---- liveness: poll a source's max mtime; re-fetch + re-render on change -----
-const fetchGraph = () => (EPIC ? fromTbd(EPIC) : fromFixture());
-function sourceMtime() {
-  if (EPIC) return maxMtime(join(process.cwd(), '.tbd'));
-  try { return statSync(FIXTURE).mtimeMs; } catch { return 0; }
+// ---- liveness ---------------------------------------------------------------
+function sourceMtime(view) {   // fixture views only; tbd views are content-polled
+  if (view.type !== 'fixture') return 0;
+  try { return statSync(view.path).mtimeMs; } catch { return 0; }
 }
-function maxMtime(dir) {
-  let max = 0;
-  try {
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      const p = join(dir, e.name);
-      max = e.isDirectory() ? Math.max(max, maxMtime(p)) : Math.max(max, statSync(p).mtimeMs);
-    }
-  } catch { /* dir gone */ }
-  return max;
-}
+const statusMap = (graph) => new Map(graph.nodes.map((n) => [n.id, n.status]));
+const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'unassigned' ? 'unassigned beads' : `epic:${view.slug}`;
 
-function statusMap(graph) { return new Map(graph.nodes.map((n) => [n.id, n.status])); }
+// ---- terminal / input -------------------------------------------------------
+let raw = false;
+function restore() { try { if (raw) process.stdin.setRawMode(false); process.stdout.write('\x1b[?25h'); } catch { /* noop */ } }
+process.on('exit', restore);
+['SIGINT', 'SIGTERM'].forEach((s) => process.on(s, () => { restore(); process.stdout.write('\n'); process.exit(0); }));
 
 // ---- main -------------------------------------------------------------------
-let prevStatus = new Map();
-let lastGraph = null;
-let lastDeltas = { appeared: new Set(), doneNow: new Set() };
+if (!ONCE && !LIST_VIEWS) process.stdout.write('bead-tui: discovering beads…\n');   // startup can take a few seconds
+const idSignature = () => [...SNAP.rows.keys()].sort().join(',');
+let VIEWS = resolveViews();
+
+if (LIST_VIEWS) { process.stdout.write(VIEWS.map((v) => v.key).join('\n') + '\n'); process.exit(0); }
+
+let active = 0;
 let updates = 0;
 let frame = 0;
+const prevStatus = new Map();               // view.key → Map(id→status) (persists across refetch, drives deltas)
 
-// refetch=true → pull fresh data & recompute deltas; refetch=false → repaint cached
-// graph (spinner only). Keeps idle ticks from spawning tbd every interval.
-function draw(refetch) {
-  if (refetch || !lastGraph) {
-    lastGraph = fetchGraph();
-    const cur = statusMap(lastGraph);
-    const appeared = new Set(), doneNow = new Set();
-    if (prevStatus.size) {
-      for (const [id, st] of cur) {
-        if (!prevStatus.has(id)) appeared.add(id);
-        else if (st === 'closed' && prevStatus.get(id) !== 'closed') doneNow.add(id);
-      }
-    }
-    lastDeltas = { appeared, doneNow };
-    prevStatus = cur;
+// content signature over the whole snapshot — detects status/edge/membership changes
+// regardless of where tbd persists data (it writes under .git, not the working tree).
+const contentSig = () => {
+  if (!SNAP) return '';
+  const rows = [...SNAP.rows.values()].map((r) => `${r.id}:${r.status}`).sort().join('|');
+  const edges = [...SNAP.edges.entries()].map(([k, v]) => `${k}>${[...v].sort().join(',')}`).sort().join('|');
+  return `${rows}#${edges}`;
+};
+
+function draw() {
+  const view = VIEWS[active];
+  const graph = graphForView(view);
+  const cur = statusMap(graph);
+  const prev = prevStatus.get(view.key);
+  const appeared = new Set(), doneNow = new Set();
+  if (prev) for (const [id, st] of cur) {
+    if (!prev.has(id)) appeared.add(id);
+    else if (st === 'closed' && prev.get(id) !== 'closed') doneNow.add(id);
   }
-  const out = render(lastGraph, { frame, updates }, lastDeltas);
-  process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);   // clear+home when live
+  prevStatus.set(view.key, cur);
+  const out = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates }, { appeared, doneNow });
+  process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);
   frame++;
 }
 
-if (ONCE) { draw(true); process.exit(0); }
+if (ONCE) { draw(); process.exit(0); }
 
-draw(true);
-let lastMtime = sourceMtime();
-process.stdout.write('\x1b[?25l');                                   // hide cursor
+// interactive
+process.stdout.write('\x1b[?25l');
+draw();
+let lastMtime = sourceMtime(VIEWS[active]);                  // fixture mode: reliable file mtime
+let lastContentSig = contentSig();                           // tbd mode: content-poll (data lives under .git)
+let lastIdSig = SNAP ? idSignature() : '';
+
+if (process.stdin.isTTY) {
+  raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
+  const nav = (d) => { active = (active + d + VIEWS.length) % VIEWS.length; draw(); };
+  process.stdin.on('data', (k) => {
+    if (k === '\t' || k === '\x1b[C') nav(+1);              // Tab / →
+    else if (k === '\x1b[Z' || k === '\x1b[D') nav(-1);      // Shift-Tab / ←
+    else if (k === 'q' || k === '\x03') { restore(); process.stdout.write('\n'); process.exit(0); }
+  });
+}
+
 setInterval(() => {
-  const m = sourceMtime();
-  const changed = m !== lastMtime;
-  if (changed) { lastMtime = m; updates++; }
-  draw(changed);                                                     // refetch only on change
+  const view = VIEWS[active];
+  if (view.type === 'fixture') {                            // file-backed → cheap mtime check
+    const m = sourceMtime(view);
+    if (m !== lastMtime) { lastMtime = m; updates++; }
+  } else {                                                  // tbd-backed → poll the 2-call snapshot & diff
+    refreshSnapshot();
+    const sig = contentSig();
+    if (sig !== lastContentSig) {
+      lastContentSig = sig; updates++;
+      if (idSignature() !== lastIdSig) {                     // beads added/removed → rebuild tabs+membership
+        const activeKey = view.key;
+        VIEWS = resolveViews();
+        lastIdSig = idSignature(); lastContentSig = contentSig();
+        const idx = VIEWS.findIndex((v) => v.key === activeKey);
+        active = idx >= 0 ? idx : 0;
+      }
+    }
+  }
+  draw();                                                   // idle ticks repaint the spinner
 }, INTERVAL);
-process.on('SIGINT', () => { process.stdout.write('\x1b[?25h\n'); process.exit(0); });
