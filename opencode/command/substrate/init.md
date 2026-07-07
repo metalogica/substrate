@@ -1,0 +1,185 @@
+---
+description: "Scaffold a new Substrate project in an empty directory. Drops a Vite + Convex + Clerk + TanStack Router + Tailwind v4 kernel that follows DDD, railway-oriented programming, and the testing pyramid. Runs product-focused Socratic Q&A, copies doctrines and SDD protocol into docs/, and generates the twin Gemini AI Studio scaffolding prompt plus runtime AI system prompt. Invoke in a blank folder before /substrate/migrate."
+---
+
+# /substrate/init
+
+Scaffold a new substrate project from an empty directory through the start of stage 1.
+
+## When to run
+
+- The current directory is empty (or contains only `.git/`, `AGENTS.md`, `CLAUDE.md`, `.DS_Store`, `README.md`).
+- The user wants to start a new full-stack product with substrate.
+
+## When to REFUSE
+
+Detect stage by filesystem. If ANY of these exist, STOP and redirect the user instead of scaffolding over their work:
+
+| Signal | Redirect |
+|--------|----------|
+| `package.json` exists | Already scaffolded. Run `/substrate/quick-spec` or `/substrate/architect-spec`. |
+| `prototype/` directory exists | Stage 2 — run `/substrate/migrate`. |
+| `src/` directory with code exists | Stage 3 — run `/substrate/deploy` or `/substrate/quick-spec`. |
+| `convex/` or `domain/` exists | Project is already initialized. Pick a specific command for the work you want to do. |
+
+## Workflow
+
+### Step 1. Confirm the directory is scaffold-ready
+
+Run `ls -la` (bash) and inspect. Ignore `.git`, `AGENTS.md`, `CLAUDE.md`, `.DS_Store`, `README.md` (these are fine to preserve). If anything else is present, stop and ask the user whether to proceed anyway or move to a fresh directory.
+
+### Step 2. Locate the substrate source tree + check CLI prerequisites
+
+**2a. Locate the substrate source tree.** `scaffold.sh` lives in the substrate source tree's `scripts/` directory. OpenCode has **no plugin cache** to discover it, so `SUBSTRATE_ROOT` must be set explicitly — via your shell env or via `~/.config/opencode/opencode.jsonc` under `env`. Fail fast if it is unset or wrong:
+
+```bash
+: "${SUBSTRATE_ROOT:?Set SUBSTRATE_ROOT to your substrate clone; OpenCode has no plugin cache to discover it.}"
+test -f "$SUBSTRATE_ROOT/scripts/scaffold.sh" || { echo "SUBSTRATE_ROOT=$SUBSTRATE_ROOT has no scripts/scaffold.sh — point it at a substrate clone."; exit 1; }
+```
+
+If the guard aborts, tell the user to set `SUBSTRATE_ROOT` to their substrate clone (e.g. `~/code/substrate`) in the shell or in `opencode.jsonc`'s `env` block, then re-run.
+
+**2b. Check CLI prerequisites.** With `SUBSTRATE_ROOT` resolved, run the prerequisites script:
+
+```bash
+bash "$SUBSTRATE_ROOT/scripts/prerequisites.sh"
+```
+
+The script checks for `git`, `node` (≥ 20), `pnpm` (≥ 10), `npx`, and `gh` (+ auth). macOS + Linux only.
+
+If the script exits non-zero (critical failure — missing node or pnpm, wrong version, etc.), STOP and surface the output to the user. Do NOT proceed to scaffolding until they install the missing tools — `scaffold.sh` will fail in step 5 otherwise, wasting their time.
+
+Warnings (yellow ⚠) are OK at this stage. `gh` + `gh auth` are warn-only because they're only needed at step 7 (GitHub push), which is optional.
+
+### Step 3. Socratic Q&A — project basics
+
+Ask the user these two (in one turn). End every question with the default-escape suffix `[type 'default' to let me decide sensible defaults]`:
+
+1. **Project slug** (used for folder name, `package.json` name, GitHub repo, Vercel slug). Kebab-case, e.g. `gravy-app`. Default: the current directory's basename, or `substrate-app` if that's unusable.
+2. **One-line description** (for the README and Vercel project description). Default: `A substrate project.`
+
+### Step 4. Socratic Q&A — product details
+
+Focus on the **product**, not the technology. The user is non-technical — skip jargon. Walk through these, 1–2 per turn, probing when answers are vague. End every question with `[type 'default' to let me decide sensible defaults]`. If the user picks `default`, pick a bland-but-valid value that keeps the pipeline moving and summarize defaults chosen before scaffolding so they can course-correct:
+
+1. **Product name** — the user-facing name (may differ from the slug: e.g. "Gravy" vs `gravy-app`).
+2. **One-line pitch** — what does it do in plain language? (e.g. "A marketplace to discover, list, and review poutine stores across Canada.")
+3. **Primary users (personas)** — 1–3 roles. Who uses it and why?
+4. **Primary user flows** — 3–5 numbered flows end-to-end. ("1. Land on feed. 2. Browse map. 3. Submit review.")
+5. **Core entities** — 3–6 nouns with a few key fields each. ("User {id, handle}, PoutineStore {id, name, address, gallery}, Review {id, rating, body}.")
+6. **Key pages** — 4–8 top-level pages.
+7. **Look & feel** — 2–3 adjectives plus a reference if any. ("Warm, food-forward, brutalist cards, Canadian-neutral voice.")
+8. **AI features** — yes/no. If yes:
+   - List 2–5 AI capabilities (e.g. "moderate reviews, draft store descriptions, power semantic search").
+   - Note the desired tone for AI-generated output (e.g. "grounded, never overclaim, Grade 8 reading level").
+
+Keep each turn tight. Don't dump all eight questions at once.
+
+### Step 5. Run scaffold.sh
+
+With `SUBSTRATE_ROOT` resolved and project basics in hand, invoke the scaffold script:
+
+```bash
+SUBSTRATE_ROOT="$SUBSTRATE_ROOT" bash "$SUBSTRATE_ROOT/scripts/scaffold.sh" "<project-slug>" "<one-line-description>"
+```
+
+This performs:
+- Template tree copy into the current directory
+- `docs/doctrine/` populated from substrate's `references/doctrines/`
+- `docs/protocol/sdd/` populated from substrate's `references/sdd-protocol/`
+- `{{PROJECT_NAME}}` / `{{PROJECT_DESCRIPTION}}` substituted in `package.json`, `README.md`, `index.html`
+- `pnpm install` + `pnpm app:compile` + `pnpm app:test`
+
+If the script exits non-zero, STOP and report the error. Do not proceed to step 6. Common failure modes:
+- `pnpm` not installed → tell the user to install pnpm first.
+- Network timeout during `pnpm install` → retry is safe.
+- Test failure → surface the test output; this is a bug in the substrate templates, not user error.
+
+### Step 6. Fill the product prompt templates
+
+The scaffold leaves two files with `{{...}}` tokens for product-specific content. Fill them using the Q&A answers via the edit tool:
+
+**`docs/product/ai-studio-prompt.md`** (the Gemini Build prompt):
+- `{{PRODUCT_NAME}}` — user-facing name
+- `{{ONE_LINE_DESCRIPTION}}` — the pitch
+- `{{PERSONA_DESCRIPTION}}` — 1–2 sentences per persona
+- `{{USER_FLOWS}}` — numbered list (markdown)
+- `{{ENTITIES_AND_FIELDS}}` — entity list with key fields
+- `{{KEY_PAGES}}` — bulleted list
+- `{{UI_STYLE_NOTES}}` — short paragraph
+
+**`docs/product/system-prompt.md`** (runtime AI persona):
+- `{{PRODUCT_NAME}}`, `{{ONE_LINE_DESCRIPTION}}` — same values as above
+- `{{AI_CAPABILITIES}}` — short one-line summary
+- `{{PERSONA_BULLET_LIST}}` — bulleted, indent two spaces (nested inside `<primary_users>` XML)
+- `{{ENTITY_BULLET_LIST}}` — bulleted, same indent
+- `{{CAPABILITIES_LIST}}` — bulleted
+- `{{TONE_NOTES}}` — bulleted
+
+If the user said **no AI features**, add a note at the top of `system-prompt.md`:
+
+```markdown
+> This file is a placeholder. The project does not currently include AI
+> assistant features. Delete this file or fill in the tokens if you add
+> AI features later.
+```
+
+Leave the `{{...}}` tokens in place (unfilled) for the no-AI case.
+
+### Step 7. Offer GitHub push
+
+Ask: "Want to push to GitHub now? (y/n, default y)"
+
+If yes, ask for visibility (public or private, default private). Run:
+
+```bash
+bash "$SUBSTRATE_ROOT/scripts/init-github.sh" "<project-slug>" "<visibility>"
+```
+
+Report the returned repo URL. If no, skip — the user can run the script themselves later.
+
+### Step 8. Print handoff instructions
+
+End with a message the user can act on immediately. Format it exactly like this:
+
+```
+✔ Substrate project initialized.
+
+Kernel: green (domain/ + test/ + docs/doctrine/ + docs/protocol/sdd/)
+Repo:   <GitHub URL if pushed, else "not pushed yet">
+
+Your AI Studio scaffolding prompt is at:
+  docs/product/ai-studio-prompt.md
+
+Next steps:
+  1. Open https://aistudio.google.com/ and click the "Build" tab.
+  2. Copy the contents of docs/product/ai-studio-prompt.md (everything below the --- line).
+  3. Paste into the Build description box.
+  4. Iterate in the AI Studio UI until the look is right.
+  5. Download the project as a ZIP.
+  6. Unzip it. You'll get a folder named after your product (e.g. `<project-slug>/`).
+     Drag that folder INTO `/prototype/` (which already exists in this repo).
+     Final layout should look like:
+         /prototype/<project-slug>/package.json
+         /prototype/<project-slug>/src/
+         /prototype/<project-slug>/vite.config.ts
+         ...
+  7. Return here and run /substrate/migrate.
+```
+
+Then show the contents of `docs/product/ai-studio-prompt.md` in-line so the user can copy without opening a second file.
+
+## Constraints
+
+- MUST NOT proceed if the directory is not scaffold-ready (see §"When to REFUSE").
+- MUST invoke `scaffold.sh` via bash rather than copying files individually. Copying via many edit/write calls wastes tool budget and risks drift from the canonical template tree.
+- MUST NOT invent product details. If the user skips a question, either ask it again once, or write a placeholder and flag it in the final summary so they know to revisit.
+- MUST NOT commit or push to GitHub unless the user explicitly agrees in step 7.
+- MUST NOT alter files outside the current project directory.
+- MUST print the full handoff instructions (step 8) even if the scaffold succeeded silently — the user needs the Gemini AI Studio next-step.
+- SHOULD keep Q&A tight — 1–2 questions per turn, conversational, probing when answers are vague.
+- SHOULD skip jargon (no "Convex mutation", no "TanStack Router route") unless the user signals comfort with it.
+- MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on every Socratic question. When the user picks `default`, choose a reasonable value and summarize the defaults chosen before scaffolding so the user can course-correct.
+- MUST run `scripts/prerequisites.sh` at step 2b and halt on non-zero exit. Critical tools missing = `scaffold.sh` will fail later; fail fast and point the user at the fix instead. Warnings are informational only and must not halt.
+</content>
+</invoke>

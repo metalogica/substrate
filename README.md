@@ -80,6 +80,48 @@ This removes the symlink, reinstalls from the marketplace, and leaves you pointi
 - If the dev symlink ever gets overwritten by an auto-update, just re-run `./scripts/dev-link.sh`.
 - A broken feature branch = a broken plugin in your test session. That's the intended behavior (you're testing WIP); check out `main` if you need a known-good state.
 
+## Using substrate in OpenCode
+
+substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 11 skills are
+ported to OpenCode **commands** and the `doctrine-architect` subagent to an OpenCode **agent**,
+living in the version-controlled `opencode/` tree. See `opencode/README.md` for the full
+SKILL→command translation guide and `opencode/CONVENTIONS.md` for the empirically-verified OpenCode
+facts (directory names, namespacing, Task-tool fan-out).
+
+**Two-tier model.** An *adopted* repo already gives OpenCode passive context for free — `AGENTS.md`,
+`docs/`, and `docs/scripts/*.sh` are read automatically. The **active** `/substrate/*` command
+surface needs one install step: symlink the `opencode/` tree into your global OpenCode config.
+
+```bash
+# from your substrate clone
+bash scripts/opencode-link.sh      # symlinks opencode/{command,agent} into ~/.config/opencode/
+# undo with: bash scripts/opencode-unlink.sh
+```
+
+After linking, a fresh OpenCode session lists all commands under the `substrate/` namespace —
+`/substrate/init`, `/substrate/quick-spec`, `/substrate/architect-spec`, … — and
+`opencode agent list` shows `doctrine-architect`. The link is idempotent and non-destructive (it
+refuses to overwrite a real file), and it hot-reloads: edits in the source repo are live in the
+next OpenCode session.
+
+**SUBSTRATE_ROOT.** OpenCode has no plugin cache to discover the substrate source tree, so the
+three commands that need it (`init`, `adopt`, `migrate`, plus `deploy` which shells to
+`scripts/*.sh`) read `${SUBSTRATE_ROOT:?}` and fail fast with a clear message if it's unset. Set it
+in your shell or in `~/.config/opencode/opencode.jsonc` under `env`:
+
+```bash
+export SUBSTRATE_ROOT=/absolute/path/to/your/substrate/clone
+```
+
+**Orchestrators.** `/substrate/architect-spec` and `/substrate/migrate` dispatch the
+`doctrine-architect` subagent via the OpenCode **Task tool** (one task per doctrine, parallel where
+the runtime supports it; sequential fallback otherwise). The executing agent needs
+`permission.task: allow`.
+
+**Parity rule.** The `opencode/command/substrate/*.md` files are translations of
+`skills/*/SKILL.md` and must be kept in sync — when a skill changes, re-translate its command in the
+same change. Audit with `comm -23 <(ls skills | sort) <(ls opencode/command/substrate | sed 's/\.md$//' | sort)` (expect empty).
+
 ## The pipeline
 
 ```

@@ -93,12 +93,17 @@ substrate/
 │   ├── synthesize-session/SKILL.md
 │   ├── add-doctrine/SKILL.md
 │   └── deploy/SKILL.md
+├── opencode/                       # OpenCode port (additive; mirrors skills/ + agents/)
+│   ├── README.md                   # SKILL→command translation guide + parity rule
+│   ├── CONVENTIONS.md              # empirically-verified OpenCode facts (dir names, namespacing)
+│   ├── command/substrate/          # 11 commands → /substrate/<name>
+│   └── agent/doctrine-architect.md # mode: subagent
 ├── references/
 │   ├── doctrines/                  # copied to target project's docs/doctrine/
 │   ├── sdd-protocol/               # copied to target project's docs/protocol/sdd/
 │   ├── templates/                  # copied to target project root
 │   └── example/                    # golden reference (not copied)
-├── scripts/                        # bash helpers invoked by skills
+├── scripts/                        # bash helpers invoked by skills (incl. opencode-link.sh / opencode-unlink.sh)
 └── CLAUDE.md                       # this file
 ```
 
@@ -119,6 +124,27 @@ Skills detect which stage the user is in by inspecting the current directory, no
 ### Agents are spawned by skills, never directly by the user
 
 Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skills spawn agents via the Agent tool. Both `architect-spec` (for brief → spec) and `/substrate:migrate` (for prototype → kernel) discover doctrines and spawn one `doctrine-architect` per relevant doctrine in parallel — a single Agent-tool message with N tool calls. `/substrate:quick-spec` reads doctrines directly (no subagent dispatch) but uses the same manifest-or-glob discovery.
+
+### OpenCode port (additive, kept in parity)
+
+substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 11 skills to
+OpenCode **commands** (`opencode/command/substrate/<name>.md` → `/substrate/<name>`) and
+`doctrine-architect` to an OpenCode **agent** (`mode: subagent`). Install by symlink with
+`scripts/opencode-link.sh` (undo: `opencode-unlink.sh`) — the OpenCode mirror of the Claude Code
+`dev-link.sh` hot-reload loop.
+
+Key differences from the Claude Code surface, all recorded in `opencode/CONVENTIONS.md`
+(empirically verified, not recalled):
+
+- **Additive, never subtractive.** The port does not alter `skills/`, `agents/`, or manifests.
+- **Parity rule (binding).** Each `opencode/command/substrate/<name>.md` is a *translation* of
+  `skills/<name>/SKILL.md`. When a skill changes, re-translate its command in the same change.
+  Audit: `comm -23 <(ls skills|sort) <(ls opencode/command/substrate|sed 's/\.md$//'|sort)`.
+- **Fan-out via the Task tool.** `architect-spec`/`migrate` dispatch `doctrine-architect` via
+  OpenCode's Task tool (parallel where supported; sequential fallback logged). Executing agent needs
+  `permission.task: allow`; `doctrine-architect` runs `permission.task: deny` (one-level depth).
+- **SUBSTRATE_ROOT is explicit.** OpenCode has no plugin cache, so `init`/`adopt`/`migrate`/`deploy`
+  read `${SUBSTRATE_ROOT:?}` and fail fast if unset.
 
 ### Doctrine manifest (optional contract)
 
