@@ -1,8 +1,18 @@
 {
   "orchestrate": {
-    "status": "in-progress",
+    "status": "complete",
     "started": "2026-07-07T17:11:26Z",
-    "completed-steps": [],
-    "context": "full"
+    "completed-steps": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "context": "full",
+    "completed": "2026-07-07T17:15:05Z",
+    "narrative-commit": "8c394a8f54a9feab3ffc5e0cb21e0c9656796dac"
   }
 }
