@@ -54,7 +54,7 @@ Evidence — contrast of headless invocations:
 The bare name and the unknown name fail identically at resolution, while the namespaced name
 proceeds — proving the `substrate/` subdir is a required part of the command's identity.
 
-→ All 11 substrate commands live under `command/substrate/` → `/substrate/<name>`. This also
+→ All 12 substrate commands live under `command/substrate/` → `/substrate/<name>`. This also
 satisfies FMEA #6 / Error-Handling row "namespace collision": no bare `/init` etc.
 
 ## Q3 — Headless invocation / verification mechanism

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/substrate:orchestrate <epic-or-spec>`** (skill #12) — executes a graphed bead DAG as a **parallel git-worktree fleet**, operationalizing `agents-parallel-execution-doctrine.md`. Cuts a `feat/<epic-slug>` integration branch, walks the DAG wave-by-wave, dispatches one `bead-implementer` per file-disjoint ready bead in its own worktree (off the current integration tip), merges on green, re-gates the integrated tip, pauses between waves (`--auto` to skip), and lands one signed squash commit on trunk with `commit.gpgsign` restored unconditionally. Single-writer tracker (only the orchestrator runs `tbd`/`git push`); consumes the DAG from `bead-graph.sh --epic <slug>` (never re-derives it). Tool-agnostic — Agent tool on Claude Code, Task tool on OpenCode — with a Claude-Code-only Workflow fast-path layered over the portable NL floor.
+- **`bead-implementer` subagent** — companion to `doctrine-architect`; the per-bead worker. Implements exactly one bead against an inlined Goal/Files/Gate, runs that bead's gate, reports pass/fail + a diff summary. Touches neither the tracker nor the remote (`permission.task: deny`; "no tbd, no git push" prompt-enforced) — one-level depth, single-writer stays with the orchestrator.
+- **`/substrate:execute` Step-0 routing** — detects a graphed epic and delegates to `orchestrate` only when a wave has **≥3 file-disjoint beads** AND a tracker is configured AND the user confirms. Fail-safe default = sequential; never silently fans out worktrees.
+- **OpenCode parity** — `opencode/command/substrate/orchestrate.md` (Task-tool dispatch, sequential fallback documented) + `opencode/agent/bead-implementer.md` (`mode: subagent`, `permission.task: deny`). Skill count 11 → 12 across `plugin.json`, `marketplace.json`, `CLAUDE.md`, `README.md`; skills↔commands parity audit remains empty; `doctrine-lint` green. Optional one-line pointer added to the parallel-execution doctrine's Roles section (abstract-role framing preserved).
+
 ## [0.5.0] — 2026-07-07
 
 ### Added

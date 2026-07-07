@@ -8,21 +8,23 @@ A Claude Code **plugin** that scaffolds full-stack Vite + Convex + Clerk applica
 
 The plugin exposes:
 
-- **11 user-facing skills** under `skills/`:
+- **12 user-facing skills** under `skills/`:
   - `/substrate:init` — scaffold a new project in an empty directory (stage 1)
   - `/substrate:adopt` — install the stack-agnostic docs/doctrine/gate kernel onto an *existing* repo of any language (symmetric opposite of `migrate`); no opinionated stack, wires `substrate.yaml` to the repo's own compile/test/lint
   - `/substrate:migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
   - `/substrate:deploy` — Clerk + Vercel + first live deploy (stage 3)
   - `/substrate:architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs, then graphs them into a bead DAG
   - `/substrate:graph-spec <spec>` — "Graph the Spec": decompose a written spec into a DAG of tbd beads (epic + children under label `epic:<slug>`, `blocked-by:` edges, Kahn cycle-check), rendered via `docs/scripts/bead-graph.sh`. Called automatically by `architect-spec`; runnable standalone. Produces the DAG only — the parallel-execution doctrine's orchestrator consumes it.
-  - `/substrate:execute <spec>` — executes a spec phase-by-phase with verification gates
+  - `/substrate:execute <spec>` — executes a spec phase-by-phase with verification gates; Step-0 routing delegates to `orchestrate` when the DAG warrants a parallel fleet (≥3 file-disjoint beads + tracker + user confirm), else runs the sequential path
+  - `/substrate:orchestrate <epic-or-spec>` — executes a graphed bead DAG as a parallel worktree fleet per `agents-parallel-execution-doctrine.md`: `feat/<epic-slug>` integration branch, one `bead-implementer` per file-disjoint ready bead in its own worktree, merge-on-green, re-gate the integrated tip, pause between waves (`--auto` to skip), one signed squash commit on trunk. Consumes the DAG; single-writer tracker. Tool-agnostic (Agent↔Task) with a CC-only Workflow fast-path
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
   - `/substrate:diagnose <error-context>` — targeted bug-fix loop: matches the error to a doctrine (path-layer + manifest-trigger + symbol-search composite), generates ranked hypotheses, fixes, verifies both green gate AND repro-no-longer-fires, commits
   - `/substrate:synthesize-session` — terminal phase after `/substrate:execute`: capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
   - `/substrate:add-doctrine <name>` — scaffold a new doctrine + manifest entry for horizontal expansion (infra, claw, treasury, etc.)
 
-- **1 subagent** under `agents/`:
+- **2 subagents** under `agents/`:
   - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrator skills (`/substrate:architect-spec`, `/substrate:migrate`) once per relevant doctrine; binds to whichever doctrine file it's given. Orchestration runs at skill level (depth 0) so the fan-out can spawn N children — subagents cannot themselves spawn subagents.
+  - `bead-implementer` — per-bead worker spawned by `/substrate:orchestrate`, one per file-disjoint ready bead in its own git worktree. Implements exactly one bead against an inlined Goal/Files/Gate, runs that bead's gate, reports pass/fail + a diff summary. Touches neither the tracker nor the remote (`permission.task: deny`; "no tbd, no git push" prompt-enforced) — single-writer stays with the orchestrator.
 
 - **Shared references** under `references/`:
   - `doctrines/` — binding architectural doctrines (domain, backend, frontend) copied into every new substrate project as `docs/doctrine/`
@@ -80,14 +82,15 @@ To test scaffolding in isolation, `cd` into a fresh sandbox directory and invoke
 ```
 substrate/
 ├── .claude-plugin/plugin.json     # plugin manifest
-├── agents/                         # 4 subagents (markdown with YAML frontmatter)
-├── skills/                         # 11 user-facing skills
+├── agents/                         # 2 subagents (markdown with YAML frontmatter)
+├── skills/                         # 12 user-facing skills
 │   ├── init/SKILL.md
 │   ├── adopt/SKILL.md
 │   ├── migrate/SKILL.md
 │   ├── architect-spec/SKILL.md
 │   ├── graph-spec/SKILL.md         # decompose a spec into a bead DAG
-│   ├── execute/SKILL.md
+│   ├── execute/SKILL.md            # + Step-0 routing → orchestrate when the DAG warrants
+│   ├── orchestrate/SKILL.md        # execute a bead DAG as a parallel worktree fleet
 │   ├── quick-spec/SKILL.md
 │   ├── diagnose/SKILL.md
 │   ├── synthesize-session/SKILL.md
@@ -96,8 +99,9 @@ substrate/
 ├── opencode/                       # OpenCode port (additive; mirrors skills/ + agents/)
 │   ├── README.md                   # SKILL→command translation guide + parity rule
 │   ├── CONVENTIONS.md              # empirically-verified OpenCode facts (dir names, namespacing)
-│   ├── command/substrate/          # 11 commands → /substrate/<name>
-│   └── agent/doctrine-architect.md # mode: subagent
+│   ├── command/substrate/          # 12 commands → /substrate/<name>
+│   ├── agent/doctrine-architect.md # mode: subagent
+│   └── agent/bead-implementer.md   # mode: subagent (task: deny)
 ├── references/
 │   ├── doctrines/                  # copied to target project's docs/doctrine/
 │   ├── sdd-protocol/               # copied to target project's docs/protocol/sdd/
@@ -127,9 +131,9 @@ Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skil
 
 ### OpenCode port (additive, kept in parity)
 
-substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 11 skills to
-OpenCode **commands** (`opencode/command/substrate/<name>.md` → `/substrate/<name>`) and
-`doctrine-architect` to an OpenCode **agent** (`mode: subagent`). Install by symlink with
+substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 12 skills to
+OpenCode **commands** (`opencode/command/substrate/<name>.md` → `/substrate/<name>`) and both
+`doctrine-architect` and `bead-implementer` to OpenCode **agents** (`mode: subagent`). Install by symlink with
 `scripts/opencode-link.sh` (undo: `opencode-unlink.sh`) — the OpenCode mirror of the Claude Code
 `dev-link.sh` hot-reload loop.
 

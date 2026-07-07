@@ -27,6 +27,10 @@ it first, then apply the policies below.
   bead's verification gate, and reports `pass/fail` + a short diff summary. **Touches
   neither tbd nor the remote.**
 
+> These are abstract roles. In substrate the Orchestrator role is operationalized by the
+> `/substrate:orchestrate` skill and the Subagent role by the `bead-implementer` agent — this
+> doctrine holds the *why*; that skill holds the *operational loop*.
+
 ## Policies
 
 ### 1. Single-writer tracker

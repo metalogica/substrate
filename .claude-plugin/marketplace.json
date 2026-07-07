@@ -12,7 +12,7 @@
     {
       "name": "substrate",
       "source": "./",
-      "description": "Scaffold full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes. Eleven skills cover the full pipeline — init, adopt, migrate, architect-spec, graph-spec, execute, quick-spec, diagnose, synthesize-session, add-doctrine, deploy — grounded in Domain-Driven Design, railway-oriented programming, a testing pyramid, and a Gemini AI Studio Build handoff.",
+      "description": "Scaffold full-stack Vite + Convex + Clerk apps from concept to production in 15 minutes. Twelve skills cover the full pipeline — init, adopt, migrate, architect-spec, graph-spec, execute, orchestrate, quick-spec, diagnose, synthesize-session, add-doctrine, deploy — grounded in Domain-Driven Design, railway-oriented programming, a testing pyramid, and a Gemini AI Studio Build handoff.",
       "homepage": "https://github.com/metalogica/substrate",
       "license": "MIT",
       "keywords": [

@@ -26,6 +26,29 @@ Run a spec phase-by-phase with gated verification. This is the execution half of
 
 ## Workflow
 
+### Step 0. Route: sequential vs. parallel fleet (fail-safe sequential)
+
+Before loading the spec sequentially, check whether it has been **graphed into a bead DAG** and
+whether that DAG warrants parallel execution via `/substrate:orchestrate`. This is a routing
+decision only — it never changes the sequential steps below.
+
+1. **Detect a graphed epic.** Derive `<slug>` from the spec directory (`docs/tasks/ongoing/<slug>/`).
+   If a tracker (`tbd`) is configured, read the DAG: `bash docs/scripts/bead-graph.sh --epic <slug>`.
+   No tracker, or no `epic:<slug>` beads → **skip routing, run sequential** (Step 1 onward).
+2. **Assess the bar.** Delegate to `orchestrate` **only when all hold**:
+   - a graphed `epic:<slug>` exists, AND
+   - some wave has **≥3 file-disjoint beads** (worktree overhead isn't worth it below that), AND
+   - a tracker is configured.
+3. **Confirm, then delegate.** If the bar is met, present the choice and, **on explicit user
+   confirm**, hand off to `/substrate:orchestrate <slug>` (optionally `--auto`). Otherwise — no epic,
+   fewer than 3 file-disjoint beads, no tracker, or the user declines — run the existing sequential
+   phase-by-phase path (Step 1 onward).
+
+**Fail-safe default = sequential.** Never spawn worktrees without confirmation; **never silently fan
+out**. Spawning a parallel fleet is heavy and mutating (it cuts branches and worktrees), so it is
+always an opt-in, never the silent default. See `/substrate:orchestrate` and
+`agents-parallel-execution-doctrine.md` for the fleet semantics.
+
 ### Step 1. Load the spec
 
 Read the full spec at the provided path. Verify it contains:

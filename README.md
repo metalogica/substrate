@@ -82,8 +82,8 @@ This removes the symlink, reinstalls from the marketplace, and leaves you pointi
 
 ## Using substrate in OpenCode
 
-substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 11 skills are
-ported to OpenCode **commands** and the `doctrine-architect` subagent to an OpenCode **agent**,
+substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 12 skills are
+ported to OpenCode **commands** and the `doctrine-architect` + `bead-implementer` subagents to OpenCode **agents**,
 living in the version-controlled `opencode/` tree. See `opencode/README.md` for the full
 SKILL→command translation guide and `opencode/CONVENTIONS.md` for the empirically-verified OpenCode
 facts (directory names, namespacing, Task-tool fan-out).
@@ -100,7 +100,7 @@ bash scripts/opencode-link.sh      # symlinks opencode/{command,agent} into ~/.c
 
 After linking, a fresh OpenCode session lists all commands under the `substrate/` namespace —
 `/substrate/init`, `/substrate/quick-spec`, `/substrate/architect-spec`, … — and
-`opencode agent list` shows `doctrine-architect`. The link is idempotent and non-destructive (it
+`opencode agent list` shows `doctrine-architect` and `bead-implementer`. The link is idempotent and non-destructive (it
 refuses to overwrite a real file), and it hot-reloads: edits in the source repo are live in the
 next OpenCode session.
 
@@ -138,7 +138,8 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
     │
     ▼
 /substrate:quick-spec  OR  /substrate:architect-spec (→ graph-spec bead DAG) + /substrate:execute   ← iterate features
-    │
+    │                                                        (execute routes to /substrate:orchestrate
+    │                                                         when the DAG warrants a parallel worktree fleet)
     ▼
 /substrate:synthesize-session   ← terminal phase: capture session learning into doctrine fixes + beads
     │
@@ -154,7 +155,8 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 | `/substrate:migrate` | Migrate a Gemini AI Studio prototype (dropped in `prototype/`) into the substrate kernel. Discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` subagent per relevant doctrine in parallel; you approve a migration plan; files move into `src/` with doctrine alignment and a drafted Convex backend. |
 | `/substrate:architect-spec <brief>` | Turn a brief into a multi-phase spec with verification gates. Runs Socratic Q&A, discovers the project's doctrines (manifest or glob), dispatches one `doctrine-architect` per relevant doctrine in parallel, composes an executable spec following the SDD protocol, then graphs it into a bead DAG via `graph-spec`. |
 | `/substrate:graph-spec <spec>` | **Graph the Spec.** Decompose a written spec into a directed acyclic graph of `tbd` beads — one epic + child beads under the canonical label `epic:<slug>`, wired by `blocked-by:` edges inferred from which files/symbols each step consumes vs. creates, cycle-checked via Kahn. Renders the wave shape with `docs/scripts/bead-graph.sh` (waves / mermaid / dot) so parallel vs. sequential structure is visible. Called automatically by `architect-spec`; runnable standalone on any spec. Produces the DAG only — the parallel-execution doctrine's orchestrator runs it. |
-| `/substrate:execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. |
+| `/substrate:execute <spec>` | Execute a spec phase-by-phase in a fresh Claude session, with verify commands and user-approval gates between phases. A Step-0 routing gate delegates to `/substrate:orchestrate` when the DAG warrants a parallel fleet (≥3 file-disjoint beads + tracker + user confirm); otherwise it runs the sequential path. |
+| `/substrate:orchestrate <epic-or-spec>` | Execute a graphed bead DAG as a **parallel git-worktree fleet**, operationalizing `agents-parallel-execution-doctrine.md`. Cuts a `feat/<epic-slug>` integration branch, walks the DAG wave-by-wave, dispatches one `bead-implementer` per file-disjoint ready bead in its own worktree (off the current tip), merges on green, re-gates the integrated tip, pauses between waves (`--auto` to skip), and lands one signed squash commit on trunk. Single-writer tracker; consumes the DAG (never re-derives it). Tool-agnostic (Agent tool ↔ Task tool) with a Claude-Code-only Workflow fast-path. |
 | `/substrate:quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/substrate:architect-spec` for anything big. |
 | `/substrate:synthesize-session` | Terminal phase after `/substrate:execute`. Scans the session transcript + `git log` + doctrines for drift, applies up to 5 atomic doctrine-fix commits, queues larger amendments for human triage, drafts dependency-ordered beads with self-contained state-transfer prompts, and writes a synthesis report with a top-3-to-5 Pareto cut. Idempotent. |
 | `/substrate:add-doctrine <name>` | Scaffold a new doctrine category for horizontal expansion (infra, claw, treasury, security, etc.). Runs a short Socratic Q&A for path / human-readable name / summary / layer-hint / triggers, writes a doctrine stub with `<fill in>` placeholders, and either appends an entry to the existing `doctrine-manifest.yaml` or offers to bootstrap one (registering every existing doctrine plus the new one). Does not commit — the user reviews the stub first. |

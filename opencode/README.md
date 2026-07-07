@@ -17,10 +17,11 @@ opencode/
 ├── command/
 │   └── substrate/     # namespace → /substrate/<name>
 │       ├── init.md  adopt.md  migrate.md  architect-spec.md  graph-spec.md
-│       ├── execute.md  quick-spec.md  diagnose.md  synthesize-session.md
+│       ├── execute.md  orchestrate.md  quick-spec.md  diagnose.md  synthesize-session.md
 │       ├── add-doctrine.md  deploy.md
 └── agent/
-    └── doctrine-architect.md   # mode: subagent
+    ├── doctrine-architect.md   # mode: subagent
+    └── bead-implementer.md     # mode: subagent (task: deny)
 ```
 
 Install with `scripts/opencode-link.sh` (symlinks this tree into `~/.config/opencode/`);
