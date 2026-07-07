@@ -5,7 +5,7 @@ title: "Epic: Orchestrate — parallel bead-DAG executor + bead-implementer + ex
 kind: epic
 status: open
 priority: 2
-version: 11
+version: 14
 labels:
   - epic:orchestrate
 dependencies: []
@@ -20,6 +20,9 @@ child_order_hints:
   - is-01kwyqmh7yv05yyt87nx5gg38k
   - is-01kwyqmhvsh99s705ad3ewvq1g
   - is-01kwyqmjctv7wb0gvj2dm3zpk7
+  - is-01kwys5z9y0h7j55j6gz0jfqxn
+  - is-01kwys600styeq1m6ebnttqymf
+  - is-01kwys60mhhfrk70erxcm4hrvz
 created_at: 2026-07-07T16:47:26.752Z
-updated_at: 2026-07-07T16:47:32.249Z
+updated_at: 2026-07-07T17:14:32.464Z
 ---
