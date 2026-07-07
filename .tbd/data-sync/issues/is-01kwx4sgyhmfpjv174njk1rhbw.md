@@ -3,9 +3,9 @@ type: is
 id: is-01kwx4sgyhmfpjv174njk1rhbw
 title: "[2.1] Scaffold opencode/ tree + README translation guide"
 kind: task
-status: open
+status: closed
 priority: 2
-version: 5
+version: 6
 labels:
   - epic:opencode-port
 dependencies:
@@ -19,5 +19,7 @@ dependencies:
     target: is-01kwx4sjrd6zxm8r721rpgjw8r
 parent_id: is-01kwx4qqh2djwbf42bz964awaf
 created_at: 2026-07-07T01:58:57.233Z
-updated_at: 2026-07-07T01:59:05.832Z
+updated_at: 2026-07-07T02:52:12.479Z
+closed_at: 2026-07-07T02:52:12.478Z
+close_reason: "2.1: opencode/ tree + README translation guide written"
 ---

@@ -3,12 +3,18 @@ type: is
 id: is-01kwx4qqh2djwbf42bz964awaf
 title: "Epic: OpenCode Port — all 11 skills + doctrine-architect into OpenCode"
 kind: epic
-status: open
+status: closed
 priority: 2
-version: 15
+version: 19
 labels:
   - epic:opencode-port
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kwx7ren5w01k3edc9zd4fecp
+  - type: blocks
+    target: is-01kwx7rf5gspd708pdwgvmz914
+  - type: blocks
+    target: is-01kwx7rfqfjjq101dsyj1f6a5d
 child_order_hints:
   - is-01kwx4remwcew09kzkkprjmytc
   - is-01kwx4sfg1pnm4w30eqznzens2
@@ -25,5 +31,7 @@ child_order_hints:
   - is-01kwx4smmwywq8nxrren75pgg7
   - is-01kwx4sn39knhszafystsqvvy4
 created_at: 2026-07-07T01:57:58.429Z
-updated_at: 2026-07-07T01:59:01.481Z
+updated_at: 2026-07-07T03:08:09.841Z
+closed_at: 2026-07-07T03:08:09.840Z
+close_reason: "OpenCode port complete: 11 commands + doctrine-architect agent + install scripts, committed on feat/opencode-port. All structural verifies green; behavioral testing descoped (AWS Bedrock entitlement, tracked in verification-log). Follow-ups: sub-fsji, sub-r7mm, sub-ieqy"
 ---
