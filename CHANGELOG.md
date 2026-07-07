@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-07
+
+### Added
+
+- **OpenCode port** — substrate now runs inside [OpenCode](https://opencode.ai) (`1.17.14`), additive to and independent of the Claude Code plugin surface. A new version-controlled `opencode/` tree mirrors `skills/` + `agents/`: all 11 skills are translated to OpenCode **commands** under the `substrate/` namespace (`/substrate/init`, `/substrate/architect-spec`, …) and `doctrine-architect` to an OpenCode **agent** (`mode: subagent`, `permission.edit`/`task: deny`). Ships `opencode/CONVENTIONS.md` (Phase-1 empirically-verified OpenCode facts — singular `command/`+`agent/` dirs, `substrate/`-subdir namespacing, headless `opencode run --command`, Task-tool subagent dispatch, `@`-include chaining) and `opencode/README.md` (the SKILL→command translation guide + binding skills↔commands parity rule).
+- `scripts/opencode-link.sh` / `scripts/opencode-unlink.sh` — idempotent, non-destructive symlink install of the `opencode/` tree into `~/.config/opencode/` (the OpenCode mirror of the Claude Code `dev-link.sh` hot-reload loop); warns on an OpenCode major/minor version mismatch and refuses to clobber a real user file.
+- Orchestrator commands (`architect-spec`, `migrate`) fan out to `doctrine-architect` via the OpenCode **Task tool** (parallel where the runtime supports it; logged sequential fallback). `init`/`adopt`/`migrate`/`deploy` guard `${SUBSTRATE_ROOT:?}` with fail-fast (OpenCode has no plugin cache to discover the source tree).
+- README + CLAUDE.md gain a "Using substrate in OpenCode" section documenting the two-tier model (passive `AGENTS.md` context is automatic; the active command surface needs the symlink) and the parity rule.
+
 ## [0.4.0] — 2026-07-03
 
 ### Added
