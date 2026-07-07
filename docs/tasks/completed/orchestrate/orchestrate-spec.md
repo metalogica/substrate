@@ -422,3 +422,21 @@ comm -23 <(ls skills | sort) <(ls opencode/command/substrate | sed 's/\.md$//' |
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2026-07-07 | Initial spec — `/substrate:orchestrate` + `bead-implementer` + execute Step-0 routing + OpenCode parity + CC Workflow fast-path. **Q&A defaults recorded:** routing bar = ≥3 file-disjoint beads + tracker + confirm (fail-safe sequential); wave cadence = pause-between-waves (`--auto` unattended); Workflow fast-path IN v1; bead-implementer perms `edit/bash/read allow, task deny`; mid-wave failure = continue siblings (red blocks only its dependents); doctrine discovery = `references/docs-core/docs/doctrine/`. |
+
+---
+
+### Post-execution notes
+
+Executed 2026-07-07 via `/substrate:execute`. All 7 phases green except Phase 6 (E2E), deferred to a
+live runtime as the gate permits (see `e2e-dryrun.md`; exact manual command recorded, `commit.gpgsign`
+verified `true`). Doctrine review found no binding amendments — only the additive §Roles pointer,
+which was applied.
+
+**Deviation captured for follow-up:** §4.1 and the Phase-1 verify mandated a
+`permission: { edit: allow, bash: allow, read: allow, task: deny }` frontmatter block on the
+**Claude Code** `agents/bead-implementer.md`. That block is an **OpenCode convention**; Claude Code
+agent frontmatter has no `permission` key (the existing `agents/doctrine-architect.md` carries none —
+CC restricts tools via `tools:` and subagent depth is structural, not permission-gated). The block
+therefore passes the spec's `grep task: deny` verify but is **inert in CC**. Kept as-authored to
+satisfy the binding spec; reconciliation (translate to a CC `tools:` allow-list, or document the
+inert-for-parity intent) is filed as a `drift` bead under `epic:orchestrate` by session synthesis.
