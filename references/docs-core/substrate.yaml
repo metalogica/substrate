@@ -10,6 +10,13 @@ gate:
   test:    "{{GATE_TEST}}"      # e.g. vitest run    ·  cargo test   ·  uv run pytest -q
   lint:    "{{GATE_LINT}}"      # e.g. eslint .      ·  cargo clippy ·  uv run ruff check .
 
+# --- Execution partition policy (deviatable prior; see agents-parallel-execution-doctrine.md) ---
+# /substrate:graph-spec reads these to cut the bead DAG into agent-sized `group:<window-N>`
+# windows so no runner's context rots. The orchestrator MAY re-batch (a logged deviation).
+execution:
+  context-budget: 0.4      # max fraction of a window a group may fill before graph-spec splits it
+  default-rung: auto       # auto | monolith | phase | group | per-bead
+
 # --- Optional: parallel-bead execution (see agents-parallel-execution-doctrine.md) ---
 # out-of-band gates (e2e, device, paid service) — not run on every step:
 #  out-of-band:

@@ -1,3 +1,7 @@
 .DS_Store
 node_modules
 .CLAUDE.md
+
+# Orchestration run-state: heavy per-window debug traces + deviation logs (TTL-swept).
+# .substrate/execution-state.json (the durable partition + outcome ledger) stays TRACKED.
+.substrate/runs/

@@ -20,3 +20,7 @@ skills-lock.json
 
 # Local-only reference (kept after /substrate-migrate)
 prototype-archive/
+
+# Orchestration run-state: heavy per-window debug traces + deviation logs (TTL-swept).
+# .substrate/execution-state.json (the durable partition + outcome ledger) stays TRACKED.
+.substrate/runs/
