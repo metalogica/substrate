@@ -100,6 +100,17 @@ and that seeding will then fall to manual per-run copying. Point the user at `su
 **pause for confirm-to-proceed-unseeded**. This is a warning, not an abort: a repo whose gate needs
 no gitignored input is free to run with an empty seed.
 
+**Note the gate-coverage floor.** `gate.{compile,test,lint}` is the *minimum* re-gate, not
+necessarily the *whole* suite the epic exercises. As you read the DAG (Step 2), collect the distinct
+per-bead `Gate_i` commands: any `Gate_i` that is **not** subsumed by `gate.*` means `gate.*`
+under-covers this epic — e.g. a frontend `vitest` a bead runs while `gate.test` only runs the backend
+suite, or a `tsc`-only bead narrower than `gate.*`. Do **not** treat `gate.*` alone as the
+composition net: the per-wave re-gate (5e) runs the **union** of `gate.*` and the per-bead gates
+exercised that wave. Surface this once up front so it's visible that the integrated re-gate is
+broader than `substrate.yaml`'s literal `gate` block. (If a bead's gate is a strict subset of
+`gate.*`, `/substrate:graph-spec` will have tagged it `gate-scope: partial` — a reminder that its
+green is partial and only the union re-gate authorizes the merge.)
+
 ### Step 4. Setup — integration branch + unattended signing
 
 ```bash
@@ -144,10 +155,21 @@ construction* — that's why they share one worktree and run sequentially, not i
 - **All-pass** → merge `<window-branch>` → `feat/<epic-slug>`; `git worktree remove <path>` (hygiene — an unchanged worktree auto-cleans). Newly-unblocked dependents dispatch off the updated tip.
 - **Stopped mid-window at bead *i*** → the runner leaves clean per-bead commits for the `pass` prefix (beads 1..i-1). Merge that green prefix if the ledger shows those beads gated green; keep bead *i* and the `unstarted` remainder **open**, `tbd update <id> --notes "<failure>"`. Block only the transitive dependents of the open beads — **sibling windows continue** (partial progress is a core DAG win; FMEA — mid-window failure). Fix or escalate the failed bead.
 
-**5e. Re-gate the integrated tip.** After the wave's merges, the *orchestrator* runs the declared
-`gate.*` once on `feat/<epic-slug>`. Two independently-green branches can still fail composed
-(doctrine §Supporting → *Re-run the gate on the integrated branch*; FMEA #4). **Red = composition
-failure: halt the wave transition, attach notes, fix before any dependent dispatches.**
+**5e. Re-gate the integrated tip — the union gate.** After the wave's merges, the *orchestrator*
+runs, once on `feat/<epic-slug>`, the **union of `gate.{compile,test,lint}` and every distinct
+per-bead `Gate_i` exercised by the beads merged this wave** (deduped). This union — never `gate.*`
+alone — is the **sole merge-authorizing signal** for the wave; the per-bead gates a group-runner ran
+are *fast pre-checks* that fail early inside a window, not the composition net. The union is what
+makes the re-gate sound: a per-bead gate can be **narrower than `gate.*`** (a `tsc`-only frontend
+bead), *and* `gate.*` can be **narrower than the suites the wave touched** (a `gate.test` that runs
+only the backend suite while a frontend `vitest` ran per-bead). Re-gate with `gate.*` alone and a
+whole suite the wave exercised never gets composed-checked — so a green-reported wave can sit on a
+red integrated tip (doctrine §Supporting → *Re-run the gate on the integrated branch*; FMEA #4). Two
+independently-green branches can still fail composed. **Record the wave's re-gate into
+`.substrate/execution-state.json` as it runs** — `{wave, commands: [...], result, tip-sha}` (Step 6;
+the file is written **incrementally per wave**, not only at close, so an aborted run still leaves the
+evidence). **Red = composition failure: halt the wave transition, attach notes, fix before any
+dependent dispatches.** A wave with no recorded re-gate entry is a protocol violation.
 
 **5f. Close vs leave-open (two-stage gate).** For each green, merged bead:
 
@@ -161,7 +183,7 @@ next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the use
 
 ### Step 6. Epic close
 
-1. **Write `.substrate/execution-state.json`** — the durable run-state, before the squash. Record, under the `<epic>` key: the `run-id`, the **chosen `partition`** (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons, mirroring the run-log), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed alongside the squash.
+1. **Finalize `.substrate/execution-state.json`** — the durable run-state. This file is written **incrementally**, not once at the end: stamp the `run-id` + chosen `partition` at run start, append a `re-gates[]` entry after every wave's union re-gate (5e), and record each bead's `outcome` as it merges — so a crash or an aborted run still leaves a partial, truthful ledger (and the re-gate history that makes a composition failure diagnosable after the fact). At epic close, before the squash, finalize it: under the `<epic>` key record the `run-id`, the **chosen `partition`** (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons, mirroring the run-log), the per-wave `re-gates` (`[{wave, commands, result, tip-sha}]` — the union-gate proof), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed alongside the squash.
 2. **One** `tbd sync` — orchestrator-only, at epic close (or an explicitly agreed checkpoint). `auto_sync` stays off; never sync mid-flight from a worktree (doctrine §Policy-3 → *Batch sync*).
 3. Land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git switch <trunk>` → `git merge --squash feat/<epic-slug>` → `git commit -S -m "..."`. Squash keeps the unsigned bead commits out of trunk history.
 4. **Restore `commit.gpgsign true` unconditionally** — including on the abort / rollback path. This restore is idempotent; never leave signing disabled past the run (doctrine §Supporting → *Unattended signing*; FMEA #1).
@@ -180,7 +202,7 @@ on OpenCode. Do not hardwire Workflow as the sole mechanism.
 - MUST abort with an explanation if `substrate.yaml`'s `gate` block is missing — never probe a toolchain.
 - MUST warn (not abort) before dispatch when `worktree-seed` is undeclared but `.gitignore` names build/dep paths the gate plausibly needs, and pause for confirm — never silently dispatch into worktrees that will fail the gate on an unseeded input (no-silent-fallback).
 - MUST honor the **single-writer** invariant: only the orchestrator runs `tbd update`/`close`/`sync` or `git push`. Subagents receive Goal/Files/Gate inlined and return a result.
-- MUST branch each bead worktree off the **current integration tip**, merge-on-green, and **re-gate the integrated tip** each wave.
+- MUST branch each bead worktree off the **current integration tip**, merge-on-green, and **re-gate the integrated tip each wave with the union of `gate.*` and every per-bead gate exercised that wave** — the union re-gate (never `gate.*` alone) is the sole merge-authorizing signal, and each wave's `{wave, commands, result, tip-sha}` MUST be recorded incrementally in `.substrate/execution-state.json`. A wave with no recorded re-gate entry is a protocol violation.
 - MUST enforce **file-disjoint** waves (pairwise-Files guard) beyond graph-spec's edges.
 - MUST apply the **two-stage gate**: headless-green → merge + unblock dependents; out-of-band proof → leave open + noted until a human runs it.
 - MUST disable signing for the run and **restore `commit.gpgsign true` unconditionally** (incl. abort). Land trunk as one signed **squash** commit.

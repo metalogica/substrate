@@ -80,7 +80,7 @@ policies apply.
 | Artifact | Home | Lifecycle |
 |---|---|---|
 | Partition policy (`context-budget`, `default-rung`) | `substrate.yaml` → `execution:` block | committed config |
-| Chosen partition + per-bead outcome ledger + run-log pointer | `.substrate/execution-state.json` | committed state (mirrors `synthesis-state.json`) |
+| Chosen partition + per-wave union-regate ledger + per-bead outcome ledger + run-log pointer | `.substrate/execution-state.json` | committed state, written **incrementally per wave** (mirrors `synthesis-state.json`) |
 | Per-window heavy debug trace + deviation log | `.substrate/runs/<epic>/<run-id>/` | gitignored, TTL-swept |
 | Per-bead partition membership | `group:<window-N>` label in tbd | with the DAG |
 | Spec back-link for a cold runner | `spec:<path>#<section>` per bead | with the bead |
@@ -93,7 +93,8 @@ execution:
   default-rung: auto       # auto | monolith | phase | group | per-bead
 ```
 
-`.substrate/execution-state.json` (durable run-state — written by orchestrate before the trunk squash):
+`.substrate/execution-state.json` (durable run-state — written by orchestrate **incrementally per
+wave**, finalized before the trunk squash):
 
 ```json
 {
@@ -101,14 +102,21 @@ execution:
     "run-id": "<epic>-<YYYYMMDD-HHMM>",
     "partition": { "window-1": ["<bead-id>", "..."], "window-2": ["..."] },
     "deviations": [{ "from": "graph-spec", "reason": "<why re-batched>", "windows": {} }],
+    "re-gates": [
+      { "wave": 1, "commands": ["<gate.compile>", "<gate.test>", "<per-bead gate unioned in>"],
+        "result": "pass|fail", "tip-sha": "<sha>" }
+    ],
     "outcomes": { "<bead-id>": { "status": "pass|fail|open", "commit": "<sha|null>" } },
     "run-log": ".substrate/runs/<epic>/<run-id>/"
   }
 }
 ```
 
-Run-state is **durable and re-verified** — never a `spool`-style delete-on-read. `execution-state.json`
-stays tracked; `.substrate/runs/` is gitignored.
+`re-gates[]` is the per-wave union-regate proof (§Supporting → *Re-run the gate on the integrated
+branch*): one entry per wave, appended as it runs — so a crashed or aborted run still leaves the
+history that makes a composition failure diagnosable, and a missing wave entry is a detectable
+protocol violation. Run-state is **durable and re-verified** — never a `spool`-style delete-on-read.
+`execution-state.json` stays tracked; `.substrate/runs/` is gitignored.
 
 ## Policies
 
@@ -119,11 +127,14 @@ never handed the `tbd` CLI or `git push`. One writer → no race on the shared `
 data branch.
 
 ### 2. Integration branch + merge-on-green
-One integration branch per epic — `feat/<epic-slug>` — cut from the trunk. Each bead runs
-in its **own worktree branched off the *current tip* of that integration branch**, so it
-already contains its merged blockers. On a green gate: merge the bead's branch into the
-integration branch, *then* spawn its dependents. Never branch all beads off stale trunk.
-Sequence by dependency wave; the critical-path spine is serial by design, not by accident.
+One integration branch per epic — `feat/<epic-slug>` — cut from the trunk. Each **window** runs
+in its **own worktree branched off the *current tip* of that integration branch**, so it already
+contains its merged blockers. The group-runner implements the window's beads in sequence in that
+one warm worktree (gating each). On the window's green ledger: merge the window branch into the
+integration branch, **re-gate the integrated tip with the union gate** (§Supporting), *then*
+dispatch the windows it unblocked. Never branch all windows off stale trunk. Sequence by dependency
+wave; the critical-path spine is serial by design, not by accident. (A pre-partition DAG with no
+`group:` labels degenerates to one bead per window — the classic per-bead behavior.)
 
 ### 3. Batch sync
 `auto_sync` stays **off**. Exactly one `tbd sync`, orchestrator-only, at epic close (or an
@@ -173,8 +184,19 @@ stage changes that seam and nothing else.
   land the result on trunk as **one signed commit** (`git merge --squash` + a signed commit) and
   **restore `commit.gpgsign true`**. Squash also keeps the unsigned bead commits out of trunk
   history. Never leave signing disabled past the run.
-- **Re-run the gate on the integrated branch, not just per-branch.** After a wave's merges, run
-  the gate once on the integration tip — two independently-green branches can still fail composed.
+- **Re-run the gate on the integrated branch — as the *union* of every suite the wave touched, not
+  just `gate.*`.** After a wave's merges, run one re-gate on the integration tip. It must be the
+  **union of the declared `gate.{compile,test,lint}` and every distinct per-bead gate the beads
+  merged this wave exercised** (deduped) — because the per-bead gates can be *narrower* than `gate.*`
+  (a `tsc`-only frontend bead) *and* `gate.*` itself can be *narrower* than the suites the wave ran
+  (a `gate.test` that only runs the backend suite while a frontend `vitest` ran per-bead). Re-gate
+  with `gate.*` alone and a suite the wave exercised never gets composed-checked, so a green-reported
+  wave can rest on a red integrated tip until some later wave happens to run the missing suite. This
+  union re-gate — not the per-bead pre-checks — is the **sole merge-authorizing signal** for the
+  wave; two independently-green branches can still fail composed. It is **mandatory and recorded**:
+  append `{wave, commands, result, tip-sha}` to `execution-state.json` as each wave re-gates (the
+  file is written *incrementally*, so an aborted run still carries the proof). A wave with no recorded
+  re-gate is a protocol violation.
 - **Worktree hygiene.** Remove a worktree after its merge; an unchanged worktree auto-cleans.
 - **External blockers are edges, not prose.** If a bead waits on work outside the epic,
   model it as a dependency on a real bead (e.g. a downstream endpoint → its upstream migration)
@@ -188,20 +210,31 @@ per-worktree `toolchain-pin.install` step, and the resolved `toolchain-pin.env` 
 repo by `substrate.yaml`. The orchestrator reads those keys before dispatch; this doctrine only
 requires that they be honored.
 
-## Per-bead dispatch checklist (orchestrator)
+## Per-window dispatch checklist (orchestrator)
 
-1. Confirm all blockers are closed (`tbd ready` / `tbd show <id>`).
-2. `tbd update <id> --status in_progress`.
-3. Spawn the subagent (worktree-isolated) with: the bead's **Goal / Files / Gate**, the
-   plan/spec link, the relevant `CLAUDE.md`, and the standing rule *"no tbd, no git push —
-   implement, run the gate, report pass/fail + a diff summary."*
-4. On **green**: merge the worktree branch → integration branch; launch newly-unblocked
-   dependents (off the updated tip). Then close — *but* if the bead has a Policy-4 out-of-band
-   gate, **don't close**: `tbd update <id> --notes "merged; awaiting <out-of-band> gate"`
-   and leave it open until that gate passes. Otherwise `tbd close <id> --reason "gate green: <summary>"`.
-5. On **red**: keep open, `tbd update <id> --notes "<failure>"`, fix or escalate.
-6. After the final bead's headless merge: a single `tbd sync`. Land the integration branch on
-   trunk as one signed squash commit (Policy-4 beads close later, as their out-of-band gates pass).
+The dispatch unit is the **window** (a `group:<window-N>`), not the bead. (Absent `group:` labels
+the DAG degenerates to one bead per window — the steps below are unchanged, N just equals 1.)
+
+1. Confirm every bead in the window is ready — all blockers **closed *or merged*** (`tbd ready` /
+   `tbd show <id>`; merge, not close, is the unblock signal). A window dispatches only when *all*
+   its beads are ready.
+2. `tbd update <id> --status in_progress` for **each bead in the window**.
+3. `git worktree add` off the **current integration tip**; copy `worktree-seed[]` in and run
+   `toolchain-pin.install` **once for the window**. Spawn **one group-runner** (worktree-isolated)
+   with: the window's **N sequenced bead tuples** (each **Goal / Files / Gate**, env-resolved), the
+   `spec:<path>#<section>` back-links, the relevant `CLAUDE.md`, and the standing rule *"no tbd, no
+   git push — implement each bead in sequence, run each bead's gate, report a per-bead pass/fail
+   ledger + a diff summary."*
+4. Read the returned **per-bead ledger**. Merge the green `pass` prefix → integration branch;
+   **re-gate the integrated tip with the union gate** (§Supporting). Launch newly-unblocked windows
+   (off the updated tip). Then, per merged bead: close — *but* if the bead has a Policy-4 out-of-band
+   gate, **don't close**: `tbd update <id> --notes "merged; awaiting <out-of-band> gate"` and leave
+   it open until that gate passes. Otherwise `tbd close <id> --reason "gate green: <summary>"`.
+5. On a **red** bead: it stops its window (remaining beads `unstarted`); keep the red + unstarted
+   beads open, `tbd update <id> --notes "<failure>"`, fix or escalate. **Sibling windows continue.**
+6. After the final window's headless merge: finalize `.substrate/execution-state.json`, run a single
+   `tbd sync`, and land the integration branch on trunk as one signed squash commit (Policy-4 beads
+   close later, as their out-of-band gates pass).
 
 ## Why these (the reasoning, so future edits stay faithful)
 
