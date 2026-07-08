@@ -3,16 +3,16 @@ type: is
 id: is-01kx1kd0sx8a8jzdctce4x7ag9
 title: "bead-tui: orchestration pane (visualize strategy/rung used)"
 kind: feature
-status: open
+status: closed
 priority: 2
-version: 3
+version: 4
 labels:
   - epic:orchestrated-execution
 dependencies: []
 parent_id: is-01kx1kacgks16j4ddk86vt5ps1
 created_at: 2026-07-08T19:31:13.852Z
-updated_at: 2026-07-08T20:36:13.082Z
-closed_at: null
+updated_at: 2026-07-08T20:40:19.146Z
+closed_at: 2026-07-08T20:40:19.146Z
 close_reason: null
 ---
 ## Acceptance criterion
