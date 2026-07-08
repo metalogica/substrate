@@ -10,11 +10,17 @@ Capture the session's learning before it evaporates. Convert it into doctrine fi
 ## Position in the lifecycle
 
 ```
-/substrate:architect-spec  →  /substrate:execute  →  /substrate:synthesize-session
-       (plan)                    (build + commit)         (capture + queue)
+/substrate:architect-spec  →  /substrate:orchestrate   →  /substrate:synthesize-session
+       (plan)                  (build + commit)              (capture + queue)
+                            [primary: parallel fleet]
+                            or /substrate:execute (attended single-window)
 ```
 
-Not a phase of `execute`. Per-feature idempotent — if you executed three specs this session you can synthesize each one independently. A re-run on the same feature either no-ops (`status: complete` in state file) or resumes (`status: in-progress`).
+Not a phase of the executor. The build step is `/substrate:orchestrate` (the primary door — a
+parallel worktree fleet over the graphed DAG) or its **attended** single-window alternative
+`/substrate:execute`; synthesize runs after either one lands the feature. Per-feature idempotent — if
+you built three specs this session you can synthesize each one independently. A re-run on the same
+feature either no-ops (`status: complete` in state file) or resumes (`status: in-progress`).
 
 ## What this skill reads
 
@@ -34,15 +40,15 @@ In addition to context, the skill reads:
 
 ## When to run
 
-- A spec was just executed in this session and archived to `docs/tasks/completed/<feature>/` by `/substrate:execute`.
-- You are still in the same Claude session as the execution — the model's working context is the primary input.
+- A spec was just built in this session and archived to `docs/tasks/completed/<feature>/` by the executor — `/substrate:orchestrate` (the primary parallel door) or the attended `/substrate:execute`.
+- You are still in the same Claude session as that build — the model's working context is the primary input.
 
 ## When to REFUSE
 
 | Signal | Redirect |
 |--------|----------|
 | No `docs/doctrine/` directory | Not a scaffolded substrate project. Run `/substrate:init` first. |
-| No feature exists at `docs/tasks/completed/<feature>/` | Nothing to synthesize. Did `/substrate:execute` complete? |
+| No feature exists at `docs/tasks/completed/<feature>/` | Nothing to synthesize. Did `/substrate:orchestrate` (or the attended `/substrate:execute`) complete? |
 | `.substrate/synthesis-state.json[<feature>].status === "complete"` | Already synthesized — print the `narrative-commit` SHA and exit (idempotent). |
 | `.substrate/synthesis-state.json[<feature>].status === "in-progress"` | Resume rather than refuse: jump to the step after the last entry in `completed-steps:`. |
 | Legacy `docs/tasks/completed/<feature>/synthesis-*.md` exists with `status: complete` (pre-Option-A) | Treat as already-synthesized — print the legacy path and exit (no migration). |

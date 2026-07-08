@@ -15,17 +15,17 @@ The plugin exposes:
   - `/substrate:deploy` — Clerk + Vercel + first live deploy (stage 3)
   - `/substrate:architect-spec <brief>` — SDD orchestrator that produces gated multi-phase specs, then graphs them into a bead DAG
   - `/substrate:graph-spec <spec>` — "Graph the Spec": decompose a written spec into a DAG of tbd beads (epic + children under label `epic:<slug>`, `blocked-by:` edges, Kahn cycle-check), rendered via `docs/scripts/bead-graph.sh`. Called automatically by `architect-spec`; runnable standalone. Produces the DAG only — the parallel-execution doctrine's orchestrator consumes it.
-  - `/substrate:execute <spec>` — executes a spec phase-by-phase with verification gates; Step-0 routing delegates to `orchestrate` when the DAG warrants a parallel fleet (≥3 file-disjoint beads + tracker + user confirm), else runs the sequential path
-  - `/substrate:orchestrate <epic-or-spec>` — executes a graphed bead DAG as a parallel worktree fleet per `agents-parallel-execution-doctrine.md`: `feat/<epic-slug>` integration branch, one `bead-implementer` per file-disjoint ready bead in its own worktree, merge-on-green, re-gate the integrated tip, pause between waves (`--auto` to skip), one signed squash commit on trunk. Consumes the DAG; single-writer tracker. Tool-agnostic (Agent↔Task) with a CC-only Workflow fast-path
+  - `/substrate:orchestrate <epic-or-spec>` — **the primary execution door.** Executes a graphed bead DAG as a parallel worktree fleet per `agents-parallel-execution-doctrine.md`: reads the context-budget partition (`group:<window-N>` labels), cuts a `feat/<epic-slug>` integration branch, dispatches one **group-runner** per file-disjoint ready **window** in its own worktree (one seed+install per window), gates each bead in sequence, merge-on-green, re-gate the integrated tip, pause between waves (`--auto` to skip), writes `.substrate/execution-state.json`, one signed squash commit on trunk. Consumes the DAG; single-writer tracker. Tool-agnostic (Agent↔Task) with a CC-only Workflow fast-path
+  - `/substrate:execute <spec>` — **the attended single-window mode** (K=1, human-in-the-loop) — the alternative to the orchestrated default. Executes a spec phase-by-phase with one implementing agent and verification-gate pauses; Step-0 offers to switch to `orchestrate` when the DAG would clearly win as a parallel fleet (≥3 file-disjoint windows + tracker + user confirm), else stays attended
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
   - `/substrate:diagnose <error-context>` — targeted bug-fix loop: matches the error to a doctrine (path-layer + manifest-trigger + symbol-search composite), generates ranked hypotheses, fixes, verifies both green gate AND repro-no-longer-fires, commits
-  - `/substrate:synthesize-session` — terminal phase after `/substrate:execute`: capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
+  - `/substrate:synthesize-session` — terminal phase after the executor (`/substrate:orchestrate` or the attended `/substrate:execute`): capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
   - `/substrate:add-doctrine <name>` — scaffold a new doctrine + manifest entry for horizontal expansion (infra, claw, treasury, etc.)
   - `/substrate:spool` — close a big-context session and reopen its *position* in a fresh session through a lightweight, verified pointer (cheaper + safer than `/compact` or `/clear`). Grounds every anchor against the repo, batches a single HIL checkpoint over unverifiable claims + repo/chat conflicts, writes a launcher to an out-of-repo ID-keyed store (`~/.substrate/spool/`, TTL-swept — commits nothing). `--resume <id>` re-verifies volatile anchors, confirms, deletes (`--keep` to retain); `--list` shows the store. Sits one tier *above* `synthesize-session`: synthesize captures per-spec learning, spool carries campaign position across specs.
 
 - **2 subagents** under `agents/`:
   - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrator skills (`/substrate:architect-spec`, `/substrate:migrate`) once per relevant doctrine; binds to whichever doctrine file it's given. Orchestration runs at skill level (depth 0) so the fan-out can spawn N children — subagents cannot themselves spawn subagents.
-  - `bead-implementer` — per-bead worker spawned by `/substrate:orchestrate`, one per file-disjoint ready bead in its own git worktree. Implements exactly one bead against an inlined Goal/Files/Gate, runs that bead's gate, reports pass/fail + a diff summary. Touches neither the tracker nor the remote (`permission.task: deny`; "no tbd, no git push" prompt-enforced) — single-writer stays with the orchestrator.
+  - `bead-implementer` — **group-runner** spawned by `/substrate:orchestrate`, one per file-disjoint ready **window** (a `group:<window-N>` of file-adjacent beads) in its own git worktree. Implements the N beads of that group in sequence against inlined per-bead Goal/Files/Gate tuples, gating each bead as it lands and stopping the window on the first red gate, then reports a per-bead pass/fail ledger + a diff summary. Touches neither the tracker nor the remote (`permission.task: deny`; "no tbd, no git push" prompt-enforced) — single-writer stays with the orchestrator.
 
 - **Shared references** under `references/`:
   - `doctrines/` — binding architectural doctrines (domain, backend, frontend) copied into every new substrate project as `docs/doctrine/`
@@ -90,8 +90,8 @@ substrate/
 │   ├── migrate/SKILL.md
 │   ├── architect-spec/SKILL.md
 │   ├── graph-spec/SKILL.md         # decompose a spec into a bead DAG
-│   ├── execute/SKILL.md            # + Step-0 routing → orchestrate when the DAG warrants
-│   ├── orchestrate/SKILL.md        # execute a bead DAG as a parallel worktree fleet
+│   ├── execute/SKILL.md            # attended single-window mode (K=1, HIL); Step-0 offers orchestrate
+│   ├── orchestrate/SKILL.md        # PRIMARY door: bead DAG as a parallel worktree fleet (group-runners)
 │   ├── quick-spec/SKILL.md
 │   ├── diagnose/SKILL.md
 │   ├── synthesize-session/SKILL.md
