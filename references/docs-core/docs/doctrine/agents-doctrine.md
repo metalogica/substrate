@@ -34,7 +34,7 @@ never a hand-kept list here (see §3). The kernel ships two cross-cutting doctri
 | Doctrine | Governs |
 |---|---|
 | `agents-doctrine.md` | **this file** — the system that governs all other doctrines |
-| `agents-parallel-execution-doctrine.md` | running a bead DAG with parallel subagents on git worktrees |
+| `agents-parallel-execution-doctrine.md` | running a bead DAG with parallel group-runners (one per context-budget *window*) on git worktrees |
 
 Add your own stack/domain doctrines (`domain`, `backend`, `frontend`, `infra`, …) with
 `/substrate:add-doctrine`; each registers itself in the manifest.
@@ -299,4 +299,4 @@ or delete. Keeps the auto-loaded trigger layer thin and worth the context budget
 - `docs/scripts/doctrine-lint.sh` — the mechanical Gate 1 implementation.
 - `.hooks/pre-commit`, `.github/workflows/doctrine-lint.yml` — where the gate is wired.
 - `AGENTS.md` — the root map; the spec/task lifecycle (`docs/tasks/`) that doctrines must *not* absorb.
-- `agents-parallel-execution-doctrine.md` — the parallel-bead orchestration policy.
+- `agents-parallel-execution-doctrine.md` — the parallel orchestration policy: the group-runner (window) role and the context-budget partition.

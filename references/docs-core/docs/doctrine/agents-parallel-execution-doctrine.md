@@ -21,15 +21,94 @@ it first, then apply the policies below.
 
 ## Roles
 
-- **Orchestrator** (the main session): owns the tracker *and* git integration. The only
-  actor that writes to tbd or pushes git.
-- **Subagent** (one per bead, in its own worktree): implements exactly one bead, runs that
-  bead's verification gate, and reports `pass/fail` + a short diff summary. **Touches
-  neither tbd nor the remote.**
+- **Orchestrator** (the main session, depth-0 skill loop): owns the tracker *and* git
+  integration. The sole actor that writes to tbd or pushes git; reads the partition,
+  dispatches K group-runners, merges-on-green, re-gates the integrated tip, writes run-state.
+  **Never implements code.**
+- **Group-runner** (one per *window*, in its own worktree — formerly the one-bead subagent):
+  implements the **N beads of a single `group:<window-N>`** in one warm worktree, **gating each
+  bead in sequence**, and reports a **per-bead `pass/fail` ledger** + a short diff summary per
+  bead. **Touches neither tbd nor the remote.** The redefinition from "one bead per subagent"
+  to "one window per group-runner" is the context-budget partition (see *Grouping & windows*).
 
 > These are abstract roles. In substrate the Orchestrator role is operationalized by the
-> `/substrate:orchestrate` skill and the Subagent role by the `bead-implementer` agent — this
-> doctrine holds the *why*; that skill holds the *operational loop*.
+> `/substrate:orchestrate` skill and the Group-runner role by the `bead-implementer` agent —
+> this doctrine holds the *why*; that skill holds the *operational loop*.
+
+## Grouping & windows — context-budget partitioning
+
+One operation underlies both execution doors: **partition the DAG into agent-sized windows.**
+A *window* is a set of beads sharing a `group:<window-N>` label, chosen so its accumulated
+context cost stays under a budget — small enough that the runner's context never rots or
+auto-compacts mid-window. **Attended** execution (`/substrate:execute`) is the degenerate case:
+K collapses to one window with a human in the loop. **Orchestrated** execution
+(`/substrate:orchestrate`, the primary door) is K windows, agent-coordinated.
+
+**Grouping signal = file-adjacency.** Co-edited beads (they touch overlapping `Files`) belong in
+the *same* window — one warm worktree keeps their shared files in context across all of them.
+File-disjoint chains go in *separate* windows — isolation, and parallel where edges allow. This
+is the same disjointness signal the file-disjoint-waves rule uses to *parallelize*, now also used
+to *group*: co-edited ⇒ same window (sequential in one worktree); disjoint ⇒ separate windows
+(parallel across worktrees).
+
+**The `group:<window-N>` label.** `/substrate:graph-spec` computes the partition after its Kahn
+cycle-check and stamps every bead with a `group:<window-N>` label (alongside `epic:<slug>`), plus
+a `spec:<path>#<section>` back-link for a cold runner. `bead-graph.sh` renders windows; the
+orchestrator reads the labels and MAY re-batch (a logged **deviation**), because the partition is
+a *deviatable prior*, not a contract.
+
+**Within a group vs. across groups (tip re-sync).**
+- **Within a window:** the group-runner works sequentially in **one worktree** off the current
+  integration tip. Beads in a window co-edit the same files by construction, so bead 1 → gate →
+  bead 2 (which sees bead 1's edits) → gate → … No mid-window integration re-fetch; the shared
+  worktree *is* the shared context.
+- **Across windows:** the orchestrator merges a window's branch on green, advances the integration
+  tip, and only then dispatches windows whose blockers are now merged. Tip re-sync happens at
+  **window boundaries**, preserving the branch-off-current-tip spine.
+- **Mid-window failure:** a bead failing mid-window blocks the *rest of that window* (left open,
+  beads after it unstarted) but not windows outside it. The orchestrator reads the per-bead ledger
+  to decide; siblings continue.
+
+**Preserved invariants (unchanged by grouping).** Grouping changes only the *dispatch unit* (bead
+→ window). Everything below still holds verbatim: **single-writer tracker**, **file-disjoint
+waves**, **merge-on-green**, **gate-before-close**, the two-stage out-of-band gate, one signed
+squash on trunk, and branch-off-current-tip. A window is just the granularity at which those
+policies apply.
+
+**State & policy homes.**
+
+| Artifact | Home | Lifecycle |
+|---|---|---|
+| Partition policy (`context-budget`, `default-rung`) | `substrate.yaml` → `execution:` block | committed config |
+| Chosen partition + per-bead outcome ledger + run-log pointer | `.substrate/execution-state.json` | committed state (mirrors `synthesis-state.json`) |
+| Per-window heavy debug trace + deviation log | `.substrate/runs/<epic>/<run-id>/` | gitignored, TTL-swept |
+| Per-bead partition membership | `group:<window-N>` label in tbd | with the DAG |
+| Spec back-link for a cold runner | `spec:<path>#<section>` per bead | with the bead |
+
+`substrate.yaml` `execution:` block (policy — a deviatable prior):
+
+```yaml
+execution:
+  context-budget: 0.4      # max fraction of a window a group may fill before graph-spec splits it
+  default-rung: auto       # auto | monolith | phase | group | per-bead
+```
+
+`.substrate/execution-state.json` (durable run-state — written by orchestrate before the trunk squash):
+
+```json
+{
+  "<epic>": {
+    "run-id": "<epic>-<YYYYMMDD-HHMM>",
+    "partition": { "window-1": ["<bead-id>", "..."], "window-2": ["..."] },
+    "deviations": [{ "from": "graph-spec", "reason": "<why re-batched>", "windows": {} }],
+    "outcomes": { "<bead-id>": { "status": "pass|fail|open", "commit": "<sha|null>" } },
+    "run-log": ".substrate/runs/<epic>/<run-id>/"
+  }
+}
+```
+
+Run-state is **durable and re-verified** — never a `spool`-style delete-on-read. `execution-state.json`
+stays tracked; `.substrate/runs/` is gitignored.
 
 ## Policies
 
