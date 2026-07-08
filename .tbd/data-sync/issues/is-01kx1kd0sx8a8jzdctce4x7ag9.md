@@ -3,17 +3,17 @@ type: is
 id: is-01kx1kd0sx8a8jzdctce4x7ag9
 title: "bead-tui: orchestration pane (visualize strategy/rung used)"
 kind: feature
-status: closed
+status: open
 priority: 2
-version: 2
+version: 3
 labels:
   - epic:orchestrated-execution
 dependencies: []
 parent_id: is-01kx1kacgks16j4ddk86vt5ps1
 created_at: 2026-07-08T19:31:13.852Z
-updated_at: 2026-07-08T20:29:13.531Z
-closed_at: 2026-07-08T20:29:13.528Z
-close_reason: "gate green (node -c): orchestration pane added to bead-tui watch.mjs — reads execution-state.json + group: labels, classifies rung, renders windows as lanes. Commit cb17a1d."
+updated_at: 2026-07-08T20:36:13.082Z
+closed_at: null
+close_reason: null
 ---
 ## Acceptance criterion
 DEFERRED follow-up (out of spec phase scope per §2). Add an orchestration pane to bead-tui reading .substrate/execution-state.json + group: labels; visually shows which flow the run used: monolith (1 window all beads) / phase-windowed / group-windowed (file-adjacency) / per-bead fleet, with windows as lanes + live per-bead status.
