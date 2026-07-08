@@ -67,7 +67,7 @@ let SNAP = null;
 async function refreshSnapshot() {
   const [listRows, blocked] = await Promise.all([tlist(['--all']), tblocked()]);
   const rows = new Map();
-  for (const r of listRows) rows.set(r.id, { id: r.id, title: r.title, status: r.status, kind: r.kind });
+  for (const r of listRows) rows.set(r.id, { id: r.id, title: r.title, status: r.status, kind: r.kind, labels: r.labels || [] });
   const edges = new Map();
   for (const b of blocked) edges.set(b.id, (b.blockedBy || []).map(firstId).filter(Boolean));
   SNAP = { rows, edges };
@@ -162,6 +162,74 @@ function analyze({ nodes, edges }) {
   return { byId, blockers, waves, glyphStatus };
 }
 
+// ---- orchestration partition: .substrate/execution-state.json + group: labels ----
+//   The orchestrator cuts the DAG into `group:<window-N>` context-budget windows (one
+//   group-runner per window) and records the run in .substrate/execution-state.json before
+//   the trunk squash. This pane visualises that partition: which flow the run used and each
+//   window as a lane of live per-bead status. See agents-parallel-execution-doctrine.md
+//   §Grouping & windows. Absent both sources → no pane (backward compatible).
+const EXEC_STATE_PATH = join(process.cwd(), '.substrate', 'execution-state.json');
+function loadExecState(slug) {          // the durable run-state for this epic, or null
+  try { return jparse(readFileSync(EXEC_STATE_PATH, 'utf8'), {})[slug] || null; } catch { return null; }
+}
+const windowKey = (name) => { const m = /(\d+)/.exec(name); return m ? Number(m[1]) : name; };   // window-2 → 2
+
+// Build the partition for a view from the run-state (authoritative) or, failing that, the
+// `group:<window-N>` labels graph-spec stamped (the planned partition, pre-run).
+function partitionForView(view) {
+  if (view.type !== 'epic') return null;
+  const state = loadExecState(view.slug);
+  const ids = MEMBERSHIP?.memberIds.get(view.slug) || new Set();
+
+  let windows = null, source = null, runId = null, deviations = 0;
+  if (state && state.partition && Object.keys(state.partition).length) {
+    source = 'run'; runId = state.runId || state['run-id'] || null;
+    deviations = Array.isArray(state.deviations) ? state.deviations.length : 0;
+    windows = Object.entries(state.partition).map(([name, beadIds]) => ({
+      name,
+      beads: (beadIds || []).map((id) => {
+        const oc = (state.outcomes || {})[id] || {};
+        return { id, status: oc.status || null, commit: oc.commit || null };
+      }),
+    }));
+  } else {                                            // fallback: planned windows from group: labels
+    const byWin = new Map();
+    for (const id of ids) {
+      const win = (SNAP.rows.get(id)?.labels || []).map((l) => /^group:(.+)$/.exec(l)?.[1]).find(Boolean);
+      if (!win) continue;
+      if (!byWin.has(win)) byWin.set(win, []);
+      byWin.get(win).push({ id, status: null, commit: null });
+    }
+    if (!byWin.size) return null;                     // no partition anywhere → no pane
+    source = 'planned';
+    windows = [...byWin.entries()].map(([name, beads]) => ({ name, beads }));
+  }
+
+  windows.sort((a, b) => (windowKey(a.name) < windowKey(b.name) ? -1 : 1));
+  const total = windows.reduce((n, w) => n + w.beads.length, 0);
+  return { source, runId, deviations, windows, rung: classifyRung(windows, total) };
+}
+
+// Which execution flow the partition represents (the "rung"): one window ⇒ monolith; every
+// window a singleton ⇒ per-bead fleet; otherwise file-adjacency grouping ⇒ group-windowed.
+function classifyRung(windows, total) {
+  if (windows.length <= 1) return total <= 1 ? 'single' : 'monolith';
+  if (windows.every((w) => w.beads.length === 1)) return 'per-bead fleet';
+  return 'group-windowed';
+}
+
+// Map a partition bead to a render glyph-status: run-state outcome first, else live SNAP status.
+function paneStatus(bead) {
+  switch (bead.status) {                              // execution-state outcome vocabulary
+    case 'pass': return 'closed';
+    case 'fail': return 'blocked';
+    case 'open': return 'open';
+    default: break;
+  }
+  const live = SNAP?.rows.get(bead.id)?.status;       // planned source → live tracker status
+  return live === 'closed' ? 'closed' : live === 'in_progress' ? 'in_progress' : 'open';
+}
+
 // ---- render -----------------------------------------------------------------
 const GLYPH = { closed: '✓', in_progress: '▶', open: '○', blocked: '⊘' };
 const C = { closed: '\x1b[32m', in_progress: '\x1b[33m', open: '\x1b[90m', blocked: '\x1b[31m', dim: '\x1b[90m', title: '\x1b[37m', bold: '\x1b[1m', rev: '\x1b[7m', unrev: '\x1b[27m', reset: '\x1b[0m' };
@@ -170,6 +238,25 @@ const shortId = (id) => id.replace(/^[^-]+-/, '');    // drop the tbd prefix, wh
 function tabBar(views, active) {
   if (views.length < 2) return '';
   return views.map((v, i) => (i === active ? `${C.rev} ${v.key} ${C.unrev}` : `${C.dim} ${v.key} ${C.reset}`)).join(' ');
+}
+
+// Orchestration pane — the run's flow + each context-budget window as a lane of live status.
+function orchestrationPane(part) {
+  if (!part) return [];
+  const lines = [''];
+  const srcTag = part.source === 'run'
+    ? `${C.closed}● run${C.reset}${part.runId ? ` ${C.dim}${part.runId}${C.reset}` : ''}`
+    : `${C.dim}○ planned${C.reset}`;
+  const dev = part.deviations ? `   ${C.in_progress}⚑ ${part.deviations} deviation${part.deviations === 1 ? '' : 's'}${C.reset}` : '';
+  lines.push(`${C.bold}Orchestration${C.reset}   ${C.title}${part.rung}${C.reset}   ${srcTag}   ${C.dim}${part.windows.length} window${part.windows.length === 1 ? '' : 's'}${C.reset}${dev}`);
+  for (const w of part.windows) {
+    const strip = w.beads.map((b) => { const gs = paneStatus(b); return `${C[gs]}${GLYPH[gs]}${C.reset}`; }).join('');
+    const ids = w.beads.map((b) => `${C[paneStatus(b)]}${shortId(b.id)}${C.reset}`).join(' ');
+    const lane = w.beads.length > 1 ? 'lane' : 'solo';
+    lines.push(` ${C.dim}▐${C.reset} ${C.title}${w.name}${C.reset} ${C.dim}[${lane}]${C.reset} ${strip}  ${ids}`);
+  }
+  lines.push(`${C.dim}windows run sequentially within a lane; parallel across file-disjoint lanes${C.reset}`);
+  return lines;
 }
 
 function render(graph, meta, deltas) {
@@ -212,6 +299,7 @@ function render(graph, meta, deltas) {
   if (remaining > 0) lines.push(`${C.dim}  … +${remaining} more bead${remaining === 1 ? '' : 's'} (${remainingWavesCount} wave${remainingWavesCount === 1 ? '' : 's'}) — raise with --max${C.reset}`);
   lines.push(`${C.closed}✓ closed${C.reset}   ${C.in_progress}▶ in_progress${C.reset}   ${C.open}○ open${C.reset}   ${C.blocked}⊘ blocked${C.reset}`);
   lines.push(`${C.dim}waves: ${waves.map((w) => w.length).join(' → ')}   (${graph.nodes.length} beads)${C.reset}`);
+  for (const l of orchestrationPane(meta.partition)) lines.push(l);
   return lines.join('\n');
 }
 
@@ -246,7 +334,8 @@ function draw() {
     else if (st === 'closed' && prev.get(id) !== 'closed') doneNow.add(id);
   }
   prevStatus.set(view.key, cur);
-  const out = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates }, { appeared, doneNow });
+  const partition = partitionForView(view);
+  const out = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition }, { appeared, doneNow });
   process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);
   frame++;
 }
