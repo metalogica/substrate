@@ -48,7 +48,7 @@ The **only** tool-coupled seam is subagent dispatch. Everything else (git, tbd, 
 
 | | Claude Code | OpenCode |
 |---|---|---|
-| Portable floor | **Agent tool** — one `bead-implementer` call per ready bead in a wave (parallel calls in one message) | **Task tool** — one task per ready bead (parallel where the runtime supports it; **sequential fallback**, logged) |
+| Portable floor | **Agent tool** — one `bead-implementer` (group-runner) call per ready window in a wave (parallel calls in one message) | **Task tool** — one task per ready window (parallel where the runtime supports it; **sequential fallback**, logged) |
 | Fast-path (CC only, v1) | **Workflow tool** — deterministic per-wave pipeline, journaled resume, budget control over the same loop contract | *(n/a — NL floor only)* |
 
 The two CC paths are **behaviorally equivalent on the DAG**; the Workflow fast-path adds
@@ -169,9 +169,9 @@ next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the use
 ## CC Workflow fast-path (v1, optional at runtime)
 
 On Claude Code, the per-wave dispatch MAY run as a **Workflow-tool pipeline**: each wave is a stage,
-each ready bead a `bead-implementer` agent within it, with journaled resume and budget control over
+each ready window a `bead-implementer` (group-runner) within it, with journaled resume and budget control over
 the *same* loop contract (steps 5a–5f). It is a performance/determinism layer, **not** different
-semantics — the portable NL floor (Agent tool, one call per bead) is the default and the **only** path
+semantics — the portable NL floor (Agent tool, one call per window) is the default and the **only** path
 on OpenCode. Do not hardwire Workflow as the sole mechanism.
 
 ## Constraints

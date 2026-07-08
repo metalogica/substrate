@@ -47,7 +47,7 @@ must originate here. The executing agent needs `permission.task: allow`.
 ## The dispatch seam (Task tool; sequential fallback)
 
 The **only** tool-coupled seam is subagent dispatch. On OpenCode that is the **Task tool** — one task
-per ready bead in a wave, all issued in a single message (**parallel where the runtime supports it**).
+per ready window in a wave, all issued in a single message (**parallel where the runtime supports it**).
 If the runtime serializes Task calls, **degrade to sequential dispatch and log that you're doing so**
 — DAG *correctness* is preserved; only *concurrency* is optional (OpenCode parallel Task execution is
 behaviorally unverified — see `opencode/CONVENTIONS.md` Q4). Everything else (git, tbd, the gate) is
