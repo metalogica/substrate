@@ -133,7 +133,7 @@ Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skil
 
 ### OpenCode port (additive, kept in parity)
 
-substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 12 skills to
+substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 13 skills to
 OpenCode **commands** (`opencode/command/substrate/<name>.md` → `/substrate/<name>`) and both
 `doctrine-architect` and `bead-implementer` to OpenCode **agents** (`mode: subagent`). Install by symlink with
 `scripts/opencode-link.sh` (undo: `opencode-unlink.sh`) — the OpenCode mirror of the Claude Code
