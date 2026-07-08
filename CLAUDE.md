@@ -8,7 +8,7 @@ A Claude Code **plugin** that scaffolds full-stack Vite + Convex + Clerk applica
 
 The plugin exposes:
 
-- **12 user-facing skills** under `skills/`:
+- **13 user-facing skills** under `skills/`:
   - `/substrate:init` — scaffold a new project in an empty directory (stage 1)
   - `/substrate:adopt` — install the stack-agnostic docs/doctrine/gate kernel onto an *existing* repo of any language (symmetric opposite of `migrate`); no opinionated stack, wires `substrate.yaml` to the repo's own compile/test/lint
   - `/substrate:migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
@@ -21,6 +21,7 @@ The plugin exposes:
   - `/substrate:diagnose <error-context>` — targeted bug-fix loop: matches the error to a doctrine (path-layer + manifest-trigger + symbol-search composite), generates ranked hypotheses, fixes, verifies both green gate AND repro-no-longer-fires, commits
   - `/substrate:synthesize-session` — terminal phase after `/substrate:execute`: capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
   - `/substrate:add-doctrine <name>` — scaffold a new doctrine + manifest entry for horizontal expansion (infra, claw, treasury, etc.)
+  - `/substrate:spool` — close a big-context session and reopen its *position* in a fresh session through a lightweight, verified pointer (cheaper + safer than `/compact` or `/clear`). Grounds every anchor against the repo, batches a single HIL checkpoint over unverifiable claims + repo/chat conflicts, writes a launcher to an out-of-repo ID-keyed store (`~/.substrate/spool/`, TTL-swept — commits nothing). `--resume <id>` re-verifies volatile anchors, confirms, deletes (`--keep` to retain); `--list` shows the store. Sits one tier *above* `synthesize-session`: synthesize captures per-spec learning, spool carries campaign position across specs.
 
 - **2 subagents** under `agents/`:
   - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrator skills (`/substrate:architect-spec`, `/substrate:migrate`) once per relevant doctrine; binds to whichever doctrine file it's given. Orchestration runs at skill level (depth 0) so the fan-out can spawn N children — subagents cannot themselves spawn subagents.
@@ -83,7 +84,7 @@ To test scaffolding in isolation, `cd` into a fresh sandbox directory and invoke
 substrate/
 ├── .claude-plugin/plugin.json     # plugin manifest
 ├── agents/                         # 2 subagents (markdown with YAML frontmatter)
-├── skills/                         # 12 user-facing skills
+├── skills/                         # 13 user-facing skills
 │   ├── init/SKILL.md
 │   ├── adopt/SKILL.md
 │   ├── migrate/SKILL.md
@@ -94,6 +95,7 @@ substrate/
 │   ├── quick-spec/SKILL.md
 │   ├── diagnose/SKILL.md
 │   ├── synthesize-session/SKILL.md
+│   ├── spool/SKILL.md              # close a session → verified pointer → reopen fresh
 │   ├── add-doctrine/SKILL.md
 │   └── deploy/SKILL.md
 ├── opencode/                       # OpenCode port (additive; mirrors skills/ + agents/)
