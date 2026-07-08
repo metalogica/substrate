@@ -82,7 +82,7 @@ This removes the symlink, reinstalls from the marketplace, and leaves you pointi
 
 ## Using substrate in OpenCode
 
-substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 12 skills are
+substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 13 skills are
 ported to OpenCode **commands** and the `doctrine-architect` + `bead-implementer` subagents to OpenCode **agents**,
 living in the version-controlled `opencode/` tree. See `opencode/README.md` for the full
 SKILL→command translation guide and `opencode/CONVENTIONS.md` for the empirically-verified OpenCode
@@ -142,7 +142,7 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
     │                                                         when the DAG warrants a parallel worktree fleet)
     ▼
 /substrate:synthesize-session   ← terminal phase: capture session learning into doctrine fixes + beads
-    │
+    │                          (/substrate:spool ← close a big-context session, reopen its position fresh)
     ▼
 /substrate:deploy          ← stage 3: Clerk + Vercel + live URL
 ```
@@ -159,6 +159,7 @@ aistudio.google.com/build  ← paste prompt, iterate, download ZIP → /prototyp
 | `/substrate:orchestrate <epic-or-spec>` | Execute a graphed bead DAG as a **parallel git-worktree fleet**, operationalizing `agents-parallel-execution-doctrine.md`. Cuts a `feat/<epic-slug>` integration branch, walks the DAG wave-by-wave, dispatches one `bead-implementer` per file-disjoint ready bead in its own worktree (off the current tip), merges on green, re-gates the integrated tip, pauses between waves (`--auto` to skip), and lands one signed squash commit on trunk. Single-writer tracker; consumes the DAG (never re-derives it). Tool-agnostic (Agent tool ↔ Task tool) with a Claude-Code-only Workflow fast-path. |
 | `/substrate:quick-spec` | Lightweight single-feature iteration: skeleton-of-thought planning grounded in the relevant doctrine → implement → verify → manual test → commit. Escalates to `/substrate:architect-spec` for anything big. |
 | `/substrate:synthesize-session` | Terminal phase after `/substrate:execute`. Scans the session transcript + `git log` + doctrines for drift, applies up to 5 atomic doctrine-fix commits, queues larger amendments for human triage, drafts dependency-ordered beads with self-contained state-transfer prompts, and writes a synthesis report with a top-3-to-5 Pareto cut. Idempotent. |
+| `/substrate:spool` | Close a big-context session and reopen its **position** in a fresh one through a lightweight, verified pointer — cheaper and safer than `/compact` or `/clear`. Re-derives the durable anchors *from the repo* (git head/branch/working-tree, completed vs. ongoing specs, open beads, gate commands, project head), diffs them against what the chat believed, and at a single batched HIL checkpoint surfaces every unverifiable claim + every repo/chat conflict to adjudicate — never asserting past a conflict. Writes a pointers-first launcher to an out-of-repo, ID-keyed, TTL-swept store (`~/.substrate/spool/`), so producing a spool commits nothing. `--resume <id>` re-verifies the volatile anchors (which may have advanced), reports drift, confirms, then deletes (`--keep` to retain); `--list` shows the store. Sits one tier *above* `synthesize-session` — synthesize captures per-spec learning, spool carries campaign position across specs. |
 | `/substrate:add-doctrine <name>` | Scaffold a new doctrine category for horizontal expansion (infra, claw, treasury, security, etc.). Runs a short Socratic Q&A for path / human-readable name / summary / layer-hint / triggers, writes a doctrine stub with `<fill in>` placeholders, and either appends an entry to the existing `doctrine-manifest.yaml` or offers to bootstrap one (registering every existing doctrine plus the new one). Does not commit — the user reviews the stub first. |
 | `/substrate:deploy` | Walk Clerk setup (no Google Cloud required — Clerk's dev instance ships with shared OAuth), wire the repo to GitHub + Vercel, push production env vars, trigger the first live deploy. |
 
