@@ -85,14 +85,44 @@ title() {
 
 blockers_of() { grep -E "^$1"$'\t' "$EDGES" | cut -f2; }
 
+# ---- partition overlay: each bead's `group:<window-N>` label (context-budget windows) ----
+# /substrate:graph-spec stamps `group:<window-N>` on every bead; the orchestrator dispatches
+# one group-runner per window. Absent labels (ungraphed / pre-partition DAG) render as before.
+GROUPS=$(mktemp -t beadgrp-XXXXXX)
+trap 'rm -f "$EDGES" "$GROUPS"' EXIT
+for n in $NODES; do
+  g=$($TBD show "$n" --no-sync 2>/dev/null | grep -oE 'group:[[:alnum:]_-]+' | head -n1)
+  [ -n "$g" ] && printf '%s\t%s\n' "$n" "$g" >> "$GROUPS"
+done
+group_of() { grep -E "^$1"$'\t' "$GROUPS" 2>/dev/null | cut -f2 | head -n1; }
+GROUPED=0; [ -s "$GROUPS" ] && GROUPED=1
+
 case "$FORMAT" in
   mermaid)
     echo '```mermaid'
     echo 'graph TD'
-    for n in $NODES; do
-      lbl=$(title "$n" | sed 's/"/'"'"'/g')
-      printf '  %s["%s"]\n' "$n" "$lbl"
-    done
+    if [ "$GROUPED" = "1" ]; then
+      # Box each context-budget window as a subgraph; ungrouped nodes fall through below.
+      for g in $(cut -f2 "$GROUPS" | sort -u); do
+        printf '  subgraph %s\n' "$g"
+        for n in $NODES; do
+          [ "$(group_of "$n")" = "$g" ] || continue
+          lbl=$(title "$n" | sed 's/"/'"'"'/g')
+          printf '    %s["%s"]\n' "$n" "$lbl"
+        done
+        echo '  end'
+      done
+      for n in $NODES; do
+        [ -z "$(group_of "$n")" ] || continue
+        lbl=$(title "$n" | sed 's/"/'"'"'/g')
+        printf '  %s["%s"]\n' "$n" "$lbl"
+      done
+    else
+      for n in $NODES; do
+        lbl=$(title "$n" | sed 's/"/'"'"'/g')
+        printf '  %s["%s"]\n' "$n" "$lbl"
+      done
+    fi
     # blocker --> child : the blocker must land first.
     while IFS=$'\t' read -r child blocker; do
       printf '  %s --> %s\n' "$blocker" "$child"
@@ -142,11 +172,23 @@ while [ "$(printf '%s' "$remaining" | tr -d ' ')" != "" ]; do
     echo "── Wave $wave (sequential) ──"
   fi
   for n in $current; do
-    echo "   • $(title "$n")"
+    g=$(group_of "$n")
+    if [ -n "$g" ]; then
+      echo "   • $(title "$n")   [$g]"
+    else
+      echo "   • $(title "$n")"
+    fi
     remaining=$(printf '%s' "$remaining" | sed "s/ $n / /")
   done
   echo
 done
+
+if [ "$GROUPED" = "1" ]; then
+  echo "Windows: beads tagged [group:<window-N>] share one warm worktree + one group-runner"
+  echo "(sequential within a window; parallel across file-disjoint windows). See the"
+  echo "parallel-execution doctrine §Grouping & windows."
+  echo
+fi
 
 echo "$wave wave(s). Beads in the same wave touch no shared blocker — dispatch them together;"
 echo "run waves in order. Feed this straight into the parallel-execution doctrine's orchestrator."

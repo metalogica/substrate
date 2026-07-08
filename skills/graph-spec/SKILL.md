@@ -79,6 +79,30 @@ Mirror `/substrate:synthesize-session` Step 8:
 3. **Cycle detection (Kahn).** Compute in-degrees; peel zero-in-degree nodes. If any remain → a cycle exists. **REFUSE**: print the cycle (`A → B → C → A`) and ask the user to split or drop a bead. Never emit a cyclic DAG.
 4. Encode `blocked-by:` on each bead.
 
+### Step 4.5 — Partition into context-budget windows
+
+The DAG is now cycle-free; cut it into agent-sized **windows** so no group-runner's context
+rots or auto-compacts. Read `execution.context-budget` from `substrate.yaml` (default `0.4` if
+absent — a deviatable prior, not a hard gate). Then:
+
+1. **Estimate per-bead cost.** Walk beads in topological order. For each, estimate
+   `cost = Σ(bytes of its Files/creates+consumes) + heavy-ref surcharge (schema / contract /
+   migration reads the bead must load) + gate-log weight + effort(XS…L)`. This is a heuristic
+   prior, not a measurement — round generously.
+2. **Accumulate into windows.** Open `window-1`; add beads in topological order, summing cost.
+   When the running total would cross `context-budget` (as a fraction of one agent's usable
+   window), close the current window and open the next. **Snap boundaries to file-adjacency:**
+   never split a chain of co-edited beads (overlapping `Files`) across two windows — co-edited
+   beads share a warm worktree, so they belong to the *same* window; file-disjoint chains fall
+   into *separate* windows (isolation, parallel where edges allow). Adjacency wins over the raw
+   cost cut when they conflict.
+3. **Flag under-decomposition.** If a *single* bead's cost alone exceeds `context-budget`, do
+   **not** silently over-fill a window: **warn** and recommend splitting that bead (it is too
+   heavy for one runner), then place it in its own window so the run can still proceed.
+
+The partition is a **deviatable prior**: the orchestrator MAY re-batch at dispatch time (logging
+the deviation). See `agents-parallel-execution-doctrine.md §Grouping & windows`.
+
 ### Step 5 — Persist the epic + beads
 
 Preview the full bead list in DAG order inline, then ask: `Create 1 epic + N beads under epic:<slug> now? (Y / n / select)` — default `Y` (binary gate, no default-escape suffix). `select` enters a per-bead `y / n / skip` loop.
@@ -88,12 +112,13 @@ Preview the full bead list in DAG order inline, then ask: `Create 1 epic + N bea
 1. **Epic bead:** `tbd create "Epic: <spec title>" --type epic -l "epic:<slug>" --file <spec-ref>` (a tempfile holding the spec path + one-line summary; `mktemp`, unlink after). Capture its id as `<epic-id>`.
 2. **Child beads,** in DAG order so `blocked-by:` resolves to already-assigned ids:
    - render the bead body (acceptance criterion + inlined gate + state-transfer prompt) to a tempfile,
-   - `tbd create "<title>" --type task --parent <epic-id> -l "epic:<slug>" --file <tmp>`, capture the id, `unlink` the tempfile (unconditional cleanup, even on failure),
+   - `tbd create "<title>" --type task --parent <epic-id> -l "epic:<slug>" -l "group:<window-N>" --file <tmp>`, where `<window-N>` is the bead's window from Step 4.5; capture the id, `unlink` the tempfile (unconditional cleanup, even on failure),
+   - stamp the spec back-link so a cold runner can re-open context: include `spec: <spec-path>#<owning-phase-or-step>` in the bead body (and, when the tracker supports it, `tbd update <bead-id> --spec <spec-path>`),
    - for each blocker: `tbd dep add <bead-id> <blocker-id>`.
-3. `--label epic:<slug>` is the canonical grouping — the label, not the parent link, is the join key `/substrate:synthesize-session` and `bead-graph.sh` rely on. `--parent` is the nicety on top.
+3. `--label epic:<slug>` is the canonical grouping — the label, not the parent link, is the join key `/substrate:synthesize-session` and `bead-graph.sh` rely on. `--parent` is the nicety on top. `group:<window-N>` is the partition membership the orchestrator reads (and MAY re-batch) per `agents-parallel-execution-doctrine.md §Grouping & windows`.
 4. Do **not** `tbd sync` here — batch sync stays the orchestrator's call at epic close (parallel-execution doctrine, Policy 3).
 
-**Branch B — `none`:** write each bead to `docs/tasks/ongoing/<slug>/beads/<bead-slug>.md` with `blocked-by:` + `epic: <slug>` in frontmatter. The markdown file is the bead.
+**Branch B — `none`:** write each bead to `docs/tasks/ongoing/<slug>/beads/<bead-slug>.md` with `blocked-by:`, `epic: <slug>`, `group: <window-N>` (its Step-4.5 window), and `spec: <spec-path>#<owning-phase-or-step>` in frontmatter. The markdown file is the bead.
 
 ### Step 6 — Show the shape
 
