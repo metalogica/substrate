@@ -5,7 +5,7 @@ title: "Epic: Orchestrated Execution"
 kind: epic
 status: open
 priority: 2
-version: 17
+version: 20
 labels:
   - epic:orchestrated-execution
 dependencies: []
@@ -24,8 +24,11 @@ child_order_hints:
   - is-01kx1kcz1kxx8jvc2n86m3emat
   - is-01kx1kczx2vn5fktpnp36zzp7v
   - is-01kx1kd0sx8a8jzdctce4x7ag9
+  - is-01kx1s4bbks8t02d62vbnxgd0n
+  - is-01kx1s4c74hbryrtgfy4yh3d3b
+  - is-01kx1s4dmmta5x30x031cf3xjp
 created_at: 2026-07-08T19:29:47.538Z
-updated_at: 2026-07-08T20:30:26.919Z
+updated_at: 2026-07-08T21:11:23.540Z
 closed_at: 2026-07-08T20:30:05.157Z
 close_reason: All 14 child beads landed (13 phases via attended execute + sub-ty5d). Spec archived to docs/tasks/completed/orchestrated-execution/.
 ---
