@@ -9,6 +9,8 @@ Scaffold a new doctrine category. Use this when a project has matured past the t
 
 The skill ships a doctrine stub + a manifest entry — both written, neither committed. After running, the user fills in the stub's `<fill in>` placeholders with real rules, then commits.
 
+> **Reused by `/substrate:synthesize-session`.** Steps 3 (write to the convention path) + 4 (manifest append / bootstrap) are the canonical *doctrine writer*. Synthesis's Step 4b invokes that writer **non-interactively** — it has already derived the Q1–Q5 answers from its coverage map and passes **session-filled** sections in place of the `<fill in>` placeholders, so the "keep the stub placeholder-heavy" rule below applies only to the interactive (human-invoked) path. When editing Steps 3–4, keep the content a *parameter* of the writer, not a hardcoded stub, so both callers stay in sync.
+
 ## Arguments
 
 `<name>` — the doctrine's `id` (kebab-case, e.g. `infra`, `claw-runtime`, `treasury`). The skill appends `-doctrine.md` to form the filename. If `<name>` is missing or invalid, the skill asks for one.
@@ -231,5 +233,5 @@ If the project has a manifest-coverage test (heuristic: `find . -name 'doctrine-
 - **MUST** offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on Q&A questions (Q1-Q5). Binary approval gates (`y / n`) are exempt.
 - **MUST** detect the project's nesting convention (flat / nested / mixed) and default the path question accordingly. Forcing flat onto a nested project is a real bug.
 - **MUST** validate `layer-hint` against the canonical set `{domain | backend | frontend | infra | cross-cutting}`. If the user proposes a different value, ask them to map onto one of the five or accept omission.
-- **SHOULD** keep the doctrine stub placeholder-heavy. Pre-filled examples train the user to accept the template rather than think about the rules. The point of the stub is to *force* engagement, not avoid it.
+- **SHOULD** keep the doctrine stub placeholder-heavy **on the interactive (human-invoked) path**. Pre-filled examples train the user to accept the template rather than think about the rules. The point of the stub is to *force* engagement, not avoid it. This does **not** apply when `/substrate:synthesize-session`'s Step 4b reuses the Step 3+4 writer — there the sections are intentionally session-filled, because the context that fills them is about to evaporate.
 - **SHOULD** surface manifest-coverage tests if present (heuristic grep), so the user knows the dual-write is enforcement-aware.

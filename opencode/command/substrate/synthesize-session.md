@@ -1,5 +1,5 @@
 ---
-description: "Terminal phase of the SDD lifecycle — runs once per feature after /substrate/execute archives a spec, before the human moves on. Captures non-obvious session learning that the spec/commit format can't carry, and converts it into atomic doctrine fixes (capped at 5, leverage-ranked), queued doctrine amendments (for human triage), beads with state-transfer prompts so a fresh agent can pick the work up cold, and parked open-design-questions filed as beads with `status: parked`. Idempotency + resumability live in `.substrate/synthesis-state.json`. The §1 session narrative + §7 Pareto cut live in the final synthesis-complete commit body — no per-feature .md report is written. Detects context compaction and warns. Per-feature idempotent. Skipping it is allowed; what gets lost is the ephemeral chat-only learning."
+description: "Terminal phase of the SDD lifecycle — runs once per feature after /substrate/execute archives a spec, before the human moves on. Captures non-obvious session learning that the spec/commit format can't carry, and converts it into atomic doctrine fixes (capped at 5, leverage-ranked), session-filled draft doctrines for architectural axes the session introduced that no existing doctrine governs (coverage-map detection, capped at 3, per-candidate gated, own commit, written via /substrate/add-doctrine's writer), queued doctrine amendments (for human triage), beads with state-transfer prompts so a fresh agent can pick the work up cold, and parked open-design-questions filed as beads with `status: parked`. Idempotency + resumability live in `.substrate/synthesis-state.json`. The §1 session narrative + §7 Pareto cut live in the final synthesis-complete commit body — no per-feature .md report is written. Detects context compaction and warns. Per-feature idempotent. Skipping it is allowed; what gets lost is the ephemeral chat-only learning."
 ---
 
 # /substrate/synthesize-session
@@ -69,7 +69,7 @@ Resumability + idempotency live in `.substrate/synthesis-state.json`. Create the
     "status": "in-progress" | "complete",
     "started": "<ISO8601>",
     "completed": "<ISO8601 — only when status: complete>",
-    "completed-steps": [4, 5, 6, 7, 8, 9],
+    "completed-steps": [4, "4b", 5, 6, 7, 8, 9],
     "context": "full" | "compacted",
     "narrative-commit": "<sha — backfilled after final commit>"
   }
@@ -145,7 +145,7 @@ test -f docs/synthesis-index.md && cat docs/synthesis-index.md        # cross-se
 
 ### Step 3 — Scan and categorize (draft, no writes yet)
 
-Walk the model's context and produce a draft candidate list spanning the six categories:
+Walk the model's context and produce a draft candidate list spanning the seven categories:
 
 | Category | Definition |
 |---|---|
@@ -154,14 +154,16 @@ Walk the model's context and produce a draft candidate list spanning the six cat
 | Bugs not seen | Latent bugs the session implicitly revealed but didn't trigger |
 | Implementation drift | Code that drifted from its doctrine prescription |
 | Architectural drift | Doctrine that drifted from reality (the claim is now wrong) |
+| Doctrine gap (missing axis) | An architectural axis the session *introduced* that **no** existing doctrine governs — absence, not drift (e.g. the epic added `infra/` but there is no `infra-doctrine.md`) |
 | Feature extensions | Net-new behaviour or optimisations surfaced by the session |
 
 Empty categories are signal too — explicitly note them.
 
-Tag each candidate as one of five buckets:
+Tag each candidate as one of six buckets:
 
 - **immediate-fix** — single file, factual, trivial revert, would mislead the next session within hours. Caps at 5; surplus demotes to deferred-fix.
 - **deferred-fix** — same shape as immediate-fix, but past the cap. Filed as a `type: drift` bead, **not** as an amendment (preserves the trivial revert shape).
+- **missing-doctrine** — an architectural axis the session introduced with no governing doctrine file. Authored as a session-filled draft doctrine in Step 4b (cap 3; surplus demotes to a `type: feature` bead recommending the axis).
 - **queued-amendment** — has design surface, needs human judgment. Written but not committed.
 - **bead** — net new work to be done, not a doctrine edit.
 - **parked-question** — open design question with no doctrine claim yet, no committed acceptance criterion. Filed as a `type: open-question`, `status: parked` bead so it shows up in the tracker but isn't pulled into the DAG as actionable work.
@@ -191,6 +193,56 @@ For each of the top 5:
 3. Commit as its own atomic commit. **Honor the project's commit-message convention** — check recent commits (`git log -10 --format=%B`) for trailers like `Co-Authored-By:` or `Signed-off-by:` and replicate the pattern. Do not impose a substrate-specific convention.
 
 After each commit, update `.substrate/synthesis-state.json[<feature>].completed-steps:` to include `4` (idempotent — once `4` is present, leave it). This is what makes a mid-step crash resumable.
+
+### Step 4b — Author missing doctrines (filled drafts, cap = 3)
+
+Step 4 repairs doctrines that *exist*. Step 4b handles the opposite failure: an architectural axis the session **introduced** that no doctrine governs at all. A 5-wave, 18-bead epic that stands up new infra or a new runtime subsystem should leave behind N new doctrine files — and *this* session, the one that knows the real rules, is the only cheap moment to write them. Deferring to a human running `/substrate/add-doctrine` cold next week just yields a placeholder stub, because the context that would fill it has evaporated.
+
+**Detection — coverage map (not drift).** A missing axis is an *absence*, distinct from Step 4/5's *wrong claim*. Compute it:
+
+1. **Touched areas** — from `git diff --stat <base>..HEAD`, take the first path segment of each changed file (e.g. `convex/`, `src/`, `infra/`, a new subsystem dir). Collapse to distinct areas.
+2. **Governed areas** — for each existing doctrine, read its `## 1. Scope` (or the manifest `summary` + `layer-hint`) and map it to the area(s) it claims. The baseline three cover `domain` (pure TS), `backend` (`convex/`), `frontend` (`src/`).
+3. `missing = touched-areas \ governed-areas`. Each remaining area with **non-trivial blast radius** (≥1 shipped commit's worth of code, not a lone config tweak) is a **missing-doctrine candidate**.
+
+Because a governed area never enters `missing`, this subsumes the already-actioned filter for this step — no separate pass needed.
+
+**Derive the writer inputs** (no Socratic Q&A — synthesis already knows every answer add-doctrine's Q1–Q5 would ask):
+
+- `id` — kebab-case name for the axis (new `infra/` → `infra`; a runtime subsystem → its name).
+- `path` — from the project's detected nesting convention (reuse add-doctrine Step 1's flat/nested/mixed detection).
+- `name` — title-case(`id`).
+- `summary` — one sentence describing what the axis governs, mined from the session.
+- `layer-hint` — the coverage-map layer the gap sits in.
+- `triggers` — 3–8 keywords mined from the epic's beads + the area's filenames.
+
+**Fill the sections from session context** — this is the whole reason to author here rather than defer:
+
+- `## 1. Scope` — in/out of scope, grounded in what the session actually built.
+- `## 2. Binding Rules (MUSTs)` — the hard rules the session's code established or revealed.
+- `## 3. Recommended Practices (SHOULDs)` — patterns that demonstrably worked.
+- `## 4. Anti-patterns` — anything the session tried and backed out of, or a footgun it hit.
+- `## 5. Examples` — real file shapes / snippets from the shipped code.
+- Header stays `**Status**: Draft`, `**Version**: 0.1.0` — a session-filled starting point, not authority.
+
+**Cap = 3.** Rank candidates by blast radius (lines + commits touching the area). Top 3 are authored; any surplus **demotes to a `type: feature` bead** (Step 7) titled `Author <id>-doctrine.md for the <area> axis`, carrying the coverage-map evidence in its state-transfer prompt. Never dump >3 half-known doctrines in one run.
+
+**Gate — per candidate (`y / modify / defer`).** Preview each filled draft inline, then ask per candidate:
+
+- `y` — write it.
+- `modify` — apply the user's edits, re-preview.
+- `defer` — drop from this run (does **not** auto-demote to a bead; the user chose to skip).
+
+This is deliberately **not** the default-`Y` gate the bead-persistence step uses. A filled draft doctrine is the highest design surface synthesis touches, so each one earns an explicit yes.
+
+**Write + commit.** For each approved candidate, apply `/substrate/add-doctrine`'s **Step 3 (write to the convention path) + Step 4 (manifest append / bootstrap)** as the canonical writer — passing the *filled* sections + derived Q1–Q5 answers in place of the placeholder stub. The manifest dual-write keeps any manifest-coverage test green. Commit each as its own atomic commit:
+
+```
+doctrine(<id>): initial draft from <feature> session
+```
+
+Honor the project's commit-message convention (same `git log -10` trailer inspection as Step 4).
+
+After each commit, append `"4b"` to `.substrate/synthesis-state.json[<feature>].completed-steps:` (idempotent — once present, leave it).
 
 ### Step 5 — Queue doctrine amendments
 
@@ -430,6 +482,7 @@ Print this summary to the user:
   Feature:                <feature>
   Context:                full | compacted
   Doctrine fixes:         <N> commits          (cap hit: <yes/no>, demoted: <M>)
+  Doctrines authored:     <N> {docs/doctrine/<id>-doctrine.md + manifest entry, each its own commit}  (cap hit: <yes/no>, demoted: <M>)
   Queued amendments:      <N> {in tbd as type=doctrine-amendment | as files at docs/tasks/ongoing/doctrine-updates/}  (tracker-dependent)
   Beads drafted:          <N> {in tbd | as files at docs/tasks/ongoing/<bead-slug>/bead.md}  (tracker-dependent)
   Parked questions:       <N> {in tbd as type=open-question status=parked | as files at docs/tasks/ongoing/<slug>/bead.md status=parked}
@@ -444,9 +497,10 @@ Print this summary to the user:
   Audit trail: git log <base>..HEAD — every artifact is queryable from git + the tracker. No per-feature .md report file is written.
 
 Next:
+  - Review the <N> authored draft doctrines (Status: Draft) — they're filled from session context; vet the rules, then promote to Binding.
   - Triage queued amendments when you have a quiet moment.
   - Pick a bead off the top of the DAG when you're ready to keep building.
-  - git push when you're ready — this will push: the spec-execute commit, the <N> doctrine-fix commits, the post-execution-notes commit, and this synthesis-complete commit, together as one batch.
+  - git push when you're ready — this will push: the spec-execute commit, the <N> doctrine-fix commits, the <N> authored-doctrine commits, the post-execution-notes commit, and this synthesis-complete commit, together as one batch.
 ```
 
 Then commit the state file with the narrative + Pareto cut as the body:
@@ -468,6 +522,7 @@ git commit -m "chore(<feature>): synthesis complete <YYYY-MM-DD>
 - <bead-id-or-title> — <why high-leverage>
 
 Doctrine fixes this session: <SHA-list>
+Doctrines authored this session: <id + path + SHA, one per line>
 Beads created: <tbd-id-list or markdown-path-list>
 Parked questions: <tbd-id-list or markdown-path-list>
 Queued amendments: <tbd-id-list or markdown-path-list>
@@ -489,6 +544,7 @@ Set `.substrate/synthesis-state.json[<feature>].status` to `complete` and `.subs
 - **MUST** carry the §1 narrative + §7 Pareto cut in the final synthesis-complete commit body — git is the audit log. Backfill `.substrate/synthesis-state.json[<feature>].narrative-commit` with that commit's SHA after it lands.
 - **MUST** unlink tempfiles after each successful `tbd create` / `tbd update` (use `trap` or equivalent). Leaving stray markdown bodies in `/tmp` is fine; leaving them in the working tree is the bug this design exists to prevent. On tracker-invocation failure, leave the tempfile in place and print its path so the user can recover.
 - **MUST** cap immediate fixes at 5, ranked by `miscoaching_cost × inverse_revert_cost`. Demoted candidates become `type: drift` beads, not amendments.
+- **MUST** author a session-filled draft doctrine (Step 4b) for any architectural axis the session *introduced* that no existing doctrine governs, detected via the coverage map (touched areas ∖ governed areas), not via drift. Cap at 3 per run, ranked by blast radius; surplus demotes to a `type: feature` bead recommending the axis. Each authored doctrine is `Status: Draft`, gated per-candidate (`y / modify / defer`, **not** default-`Y`), written via `/substrate/add-doctrine`'s writer (its Step 3 + Step 4) with filled sections in place of the placeholder stub, and lands as its own `doctrine(<id>): initial draft from <feature> session` commit. Never emit a bare placeholder stub from this step — the session context is the point.
 - **MUST** produce a top-3-to-5 Pareto cut. It lives in the synthesis-complete commit body and the Step 10 handoff print — not in any standalone file.
 - **MUST** annotate the archived spec with a `### Post-execution notes` block whenever deviations occurred. Replace, don't append.
 - **MUST** tag every bead, amendment, and parked-question with `originating-spec` + `originating-session` for provenance.
@@ -498,6 +554,6 @@ Set `.substrate/synthesis-state.json[<feature>].status` to `complete` and `.subs
 - **MUST** honor the project's commit-message convention (inspect `git log -10` for trailer patterns). Do not impose a substrate-specific convention.
 - **MUST** offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on Socratic clarifying questions (open-ended, multi-option). **Do not** apply it to binary approval gates (`y/n`, `y/n/modify`, `y/n/select`).
 - **SHOULD** prefer state-transfer prompts that name files + commit SHAs + verification commands explicitly. Generic prompts force the next agent to re-do the work this command exists to prevent.
-- **SHOULD** scan all six categories even if some return empty. Empty categories are signal.
+- **SHOULD** scan all seven categories even if some return empty. Empty categories are signal — an empty "Doctrine gap" row means every touched area is already governed.
 - **SHOULD** flag near-miss duplicates (different wording, same intent) to the user for confirmation rather than silently merging.
 - **SHOULD** treat legacy `docs/tasks/completed/<feature>/synthesis-*.md` files (pre-Option-A) as already-synthesized markers — print the legacy path and exit, no migration. The new state-file approach takes over for any feature not in the legacy set.
