@@ -1,10 +1,20 @@
 ---
-description: "Execute a multi-phase SDD spec (produced by /substrate/architect-spec) with verification gates between each step and phase. Invoke with a spec path (docs/tasks/ongoing/<feature>/<feature>-spec.md). Walks Phase N → Step N.M → Verify → Gate per docs/protocol/sdd/execution-format.md, pausing at each phase gate for user approval. Best run in a fresh session for a clean context window."
+description: "The ATTENDED single-window execution mode: run a multi-phase SDD spec (produced by /substrate/architect-spec) with one implementing agent while a human co-pilots, pausing at each step/phase gate for approval. Invoke with a spec path (docs/tasks/ongoing/<feature>/<feature>-spec.md). Walks Phase N → Step N.M → Verify → Gate per docs/protocol/sdd/execution-format.md. This is the single-window (K=1, human-in-the-loop) alternative to the primary door /substrate/orchestrate, which runs K context-budget windows as an unattended parallel worktree fleet. Choose execute when you want to watch/adapt one window, or the spec fits one window and you prefer HIL. Best run in a fresh session for a clean context window."
 ---
 
 # /substrate/execute
 
-Run a spec phase-by-phase with gated verification. This is the execution half of the SDD pipeline — `/substrate/architect-spec` produces the spec; this command executes it.
+Run a spec phase-by-phase with gated verification, **one window, with a human co-piloting**. This is
+the **attended** execution mode — the single-window (K=1) case of substrate's context-budget
+partition (`agents-parallel-execution-doctrine.md §Grouping & windows`), where one implementing agent
+walks the whole spec and pauses at each gate for you.
+
+> **Orchestrated is the default; attended is the deliberate choice.** The primary execution door is
+> `/substrate/orchestrate`, which partitions the graphed DAG into K windows and runs them as an
+> unattended parallel worktree fleet. Reach for **attended** `execute` when you want to *watch and
+> adapt* one window as it runs, or the spec is small enough to be one window and you prefer HIL.
+
+`/substrate/architect-spec` produces the spec; this command executes it as the attended half of the SDD pipeline.
 
 ## Arguments
 
@@ -13,6 +23,7 @@ Run a spec phase-by-phase with gated verification. This is the execution half of
 ## When to run
 
 - A spec exists and follows the grammar in `docs/protocol/sdd/execution-format.md`.
+- You want **attended, human-in-the-loop** execution of a single window — to watch/adapt as it runs, or because the spec fits one window and a parallel fleet isn't worth the worktree overhead. For the unattended parallel default, use `/substrate/orchestrate` instead.
 - You're in a FRESH session (not the same session that drafted the spec). Clean context is the entire point.
 
 ## When to REFUSE
@@ -24,6 +35,27 @@ Run a spec phase-by-phase with gated verification. This is the execution half of
 | Same session already contains the brief + Q&A + architect outputs | Open a new session and re-invoke. A cluttered context window degrades step quality on long specs. |
 
 ## Workflow
+
+### Step 0. Confirm attended is the right mode (orchestrated is the default)
+
+You were invoked as the **attended** door, but orchestrated is substrate's primary strategy — so
+before walking phases, confirm this spec actually wants a single attended window rather than the
+parallel fleet. This is a routing check only; it never changes the attended steps below.
+
+1. **Detect a graphed epic.** Derive `<slug>` from the spec directory (`docs/tasks/ongoing/<slug>/`).
+   If a tracker (`tbd`) is configured, read the DAG: `bash docs/scripts/bead-graph.sh --epic <slug>`.
+   No tracker, or no `epic:<slug>` beads → the spec has no partition to fan out; **stay attended** (Step 1 onward).
+2. **Assess whether orchestrated would clearly win** — a graphed `epic:<slug>` exists, AND some wave
+   has **≥3 file-disjoint windows/beads**, AND a tracker is configured.
+3. **Offer the default, then honor the choice.** If orchestrated would clearly win, surface it — "this
+   spec partitions into a parallel fleet; `/substrate/orchestrate <slug>` is the primary door — run
+   that instead, or stay attended here?" On **explicit confirm** to switch, hand off to
+   `/substrate/orchestrate <slug>` (optionally `--auto`). Otherwise run the attended path (Step 1
+   onward). Choosing attended is always valid — it's the deliberate single-window mode, not a fallback.
+
+**Never silently fan out.** Switching to orchestrated is always an explicit opt-in; staying attended
+never spawns a worktree. See `/substrate/orchestrate` and `agents-parallel-execution-doctrine.md
+§Grouping & windows`.
 
 ### Step 1. Load the spec
 

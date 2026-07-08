@@ -1,5 +1,5 @@
 ---
-description: "Turn a manually written brief into an executable multi-phase spec with verification gates. Invoke with a brief path (docs/tasks/ongoing/<feature>/<feature>-brief.md). Runs Socratic Q&A inline, discovers the project's doctrines via manifest or glob, dispatches one `doctrine-architect` subagent per relevant doctrine in parallel, composes their structured recommendations into a spec following the SDD protocol, and writes docs/tasks/ongoing/<feature>/<feature>-spec.md. Then graphs the spec into a bead DAG (epic:<feature>) via /substrate/graph-spec so it can be executed in parallel. Hands off to /substrate/execute for gated execution in a fresh session."
+description: "Turn a manually written brief into an executable multi-phase spec with verification gates. Invoke with a brief path (docs/tasks/ongoing/<feature>/<feature>-brief.md). Runs Socratic Q&A inline, discovers the project's doctrines via manifest or glob, dispatches one `doctrine-architect` subagent per relevant doctrine in parallel, composes their structured recommendations into a spec following the SDD protocol, and writes docs/tasks/ongoing/<feature>/<feature>-spec.md. Then graphs the spec into a bead DAG (epic:<feature>) via /substrate/graph-spec so it can be executed in parallel. Hands off to /substrate/orchestrate (the primary door — a parallel worktree fleet) in a fresh session, with /substrate/execute as the attended single-window alternative."
 ---
 
 # /substrate/architect-spec
@@ -171,15 +171,20 @@ Print this message verbatim to the user:
 Path:  docs/tasks/ongoing/<feature>/<feature>-spec.md
 Beads: epic:<feature>  (inspect: bash docs/scripts/bead-graph.sh --epic <feature>)
 
-Open a NEW terminal in this directory and run:
+Open a NEW terminal in this directory. The primary execution door is the
+orchestrator — it runs the graphed DAG as a parallel worktree fleet:
+
+  opencode  →  /substrate/orchestrate epic:<feature>
+
+Prefer to co-pilot a single window with gate-by-gate pauses instead? Use the
+attended mode:
 
   opencode  →  /substrate/execute docs/tasks/ongoing/<feature>/<feature>-spec.md
 
-The fresh session picks up the spec and executes it phase-by-phase with
-verification gates. Opening a new session gives the executor a clean context
-window — critical for long specs. To run the bead DAG in parallel instead,
-hand it to the orchestrator per the parallel-execution doctrine
-(docs/doctrine/agents-parallel-execution-doctrine.md).
+Either way, opening a new session gives the executor a clean context window —
+critical for long specs. Orchestrated is the default; attended is the
+deliberate single-window choice. See the parallel-execution doctrine
+(docs/doctrine/agents-parallel-execution-doctrine.md §Grouping & windows).
 ```
 
 Do NOT execute the spec yourself in this session. The handoff is the whole point.
@@ -195,7 +200,8 @@ Do NOT execute the spec yourself in this session. The handoff is the whole point
 - MUST NOT invent facts during composition — if architects didn't return a piece, ask the user or re-dispatch the relevant architect.
 - MUST auto-invoke `/substrate/graph-spec` on the freshly-written spec (Step 9) before the handoff — automatically, without asking the user whether to graph. The only skip is `graph-spec`'s own genuine REFUSE (no tracker AND user declines markdown beads); otherwise the bead DAG is always produced.
 - MUST NOT execute the spec. This command only produces it.
-- MUST NOT invite the user to run `/substrate/execute` in the SAME session — the fresh-context benefit is the core design.
+- MUST hand off with `/substrate/orchestrate` as the **primary** door and `/substrate/execute` as the **attended** single-window alternative — never present attended execution as the default.
+- MUST NOT invite the user to run either executor in the SAME session — the fresh-context benefit is the core design.
 - MUST NOT write code or files beyond the spec document — the sole exception is Step 9, which delegates to `/substrate/graph-spec` to persist the spec's bead DAG (an epic + child beads in the tracker, never feature code). Graphing the spec is not executing it.
 - MUST use the naming convention `<feature>-spec.md` per `brief-format.md` §3.
 - MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on every Q&A question. If the user picks `default`, choose a reasonable value and note the default in the composed spec's Change Log so it's reviewable.

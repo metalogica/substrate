@@ -104,11 +104,24 @@ commented guidance stub the template ships). If the answer was "none needed", le
 guidance in place — but do **not** silently skip the question: an empty seed on a repo whose gate
 needs gitignored inputs is exactly the failure `/substrate/orchestrate` later hits.
 
+The template also ships an uncommented `execution:` block (a sibling of `gate` / `worktree-seed` /
+`toolchain-pin`) with the partition defaults `context-budget: 0.4` and `default-rung: auto`. Leave
+the defaults unless the user asks to tune them — `/substrate/graph-spec` reads `context-budget` to
+cut the DAG into `group:<window-N>` windows, and `/substrate/orchestrate` reads `default-rung`. The
+block is documented in `agents-parallel-execution-doctrine.md §Grouping & windows` (which also
+carries the `.substrate/execution-state.json` run-state schema).
+
 Do **not** substitute anything inside `docs/doctrine/` or `docs/protocol/sdd/` — those ship verbatim.
 
 Guard the symlink: if `cp -R` left `CLAUDE.md` as a regular copy (some `cp` variants), fix it:
 ```bash
 [ -L CLAUDE.md ] || { rm -f CLAUDE.md && ln -s AGENTS.md CLAUDE.md; }
+```
+
+**Append** the orchestration run-state ignore to the target's existing `.gitignore` (append, never
+overwrite — the repo owns its own file):
+```bash
+grep -qxF ".substrate/runs/" .gitignore 2>/dev/null || printf '\n# Orchestration run-state (TTL-swept); execution-state.json stays tracked\n.substrate/runs/\n' >> .gitignore
 ```
 
 ### Step 6 — Wire the pre-commit hook
