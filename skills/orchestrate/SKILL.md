@@ -1,15 +1,22 @@
 ---
 name: orchestrate
-description: "Execute a graphed bead DAG as a parallel git-worktree fleet, operationalizing agents-parallel-execution-doctrine.md. Invoke with an epic (epic:<slug>) or a spec path whose epic has been graphed by /substrate:graph-spec. Cuts a feat/<epic-slug> integration branch, walks the DAG wave-by-wave, dispatches one bead-implementer per file-disjoint ready bead in its own worktree (off the current integration tip), merges on green, re-gates the integrated tip, pauses between waves (--auto to skip), and lands one signed squash commit on trunk. Single-writer tracker (only the orchestrator runs tbd/git push). Tool-agnostic: Agent tool on Claude Code, Task tool on OpenCode; a CC-only Workflow fast-path is layered over the same loop. Consumes the DAG — it does not re-derive it. Fail-safe: aborts with an explanation rather than probing a toolchain."
+description: "The PRIMARY execution door: run a graphed bead DAG as a parallel git-worktree fleet, operationalizing agents-parallel-execution-doctrine.md. Invoke with an epic (epic:<slug>) or a spec path whose epic has been graphed by /substrate:graph-spec. Reads the context-budget partition (group:<window-N> labels), cuts a feat/<epic-slug> integration branch, walks the DAG wave-by-wave, dispatches one group-runner per file-disjoint ready WINDOW in its own worktree (off the current integration tip, one seed+install per window), gates each bead in sequence, merges on green, re-gates the integrated tip, pauses between waves (--auto to skip), writes .substrate/execution-state.json, and lands one signed squash commit on trunk. Single-writer tracker (only the orchestrator runs tbd/git push). Tool-agnostic: Agent tool on Claude Code, Task tool on OpenCode; a CC-only Workflow fast-path is layered over the same loop. Consumes the DAG — it does not re-derive it. /substrate:execute is the attended single-window alternative. Fail-safe: aborts with an explanation rather than probing a toolchain."
 ---
 
 # /substrate:orchestrate
 
-Execute a graphed epic's bead DAG as a **parallel worktree fleet**. `/substrate:graph-spec` produces
+Execute a graphed epic's bead DAG as a **parallel worktree fleet**. This is substrate's **primary
+execution door** — the default way to run a spec once it's graphed. `/substrate:graph-spec` produces
 the DAG; this skill runs it. It is the "orchestrator" role that
 `references/docs-core/docs/doctrine/agents-parallel-execution-doctrine.md` describes — that doctrine
 holds the **why**; this skill holds the **operational loop**. Read the doctrine once; do not restate
 its rationale here.
+
+> **Orchestrated (this skill) is the primary strategy; attended (`/substrate:execute`) is the
+> single-window alternative.** Orchestrated = K context-budget windows, agent-coordinated,
+> unattended. Attended = one window, one implementing agent, a human co-pilots with phase-gate
+> pauses. Both are the *same* partition (§Grouping & windows) at different K; pick attended when you
+> want to watch/adapt one window or the spec fits one window and you prefer HIL.
 
 ## Arguments
 
@@ -67,6 +74,17 @@ Every id in one wave is safe to run in parallel; waves run in order. **Fail-fast
 art; a parse error aborts before any worktree is created (FMEA #7). `--format mermaid` is available
 for a visual sanity check.
 
+**Read the partition.** Each bead carries a `group:<window-N>` label (written by
+`/substrate:graph-spec` per `agents-parallel-execution-doctrine.md §Grouping & windows`) — the
+context-budget window it belongs to. Beads in one window are file-adjacent and run **sequentially in
+one worktree**; distinct windows within a wave are file-disjoint and run **in parallel**. The
+dispatch unit is the **window**, not the bead. The partition is a **deviatable prior**: you MAY
+re-batch it (merge two tiny windows, split an over-full one) when runtime judgment warrants — but if
+you do, **log the deviation**: mint a `run-id` (`<epic>-<YYYYMMDD-HHMM>`) and append the reason +
+the planned-vs-actual windows to `.substrate/runs/<epic>/<run-id>/deviation-log` (gitignored). No
+deviation → no log entry needed. Absent `group:` labels (an ungraphed or pre-partition DAG) → fall
+back to one bead per window (the classic per-bead behavior).
+
 ### Step 3. Read `substrate.yaml`
 
 Read `gate.{compile,test,lint}`, optional `gate.out-of-band`, `worktree-seed[]`, and
@@ -96,30 +114,35 @@ restore it unconditionally (doctrine §Supporting → *Unattended signing*).
 
 For each wave the DAG emits, in order:
 
-**5a. Filter to ready beads.** Keep only beads whose blockers are all closed *or merged* —
+**5a. Filter to ready windows.** Keep beads whose blockers are all closed *or merged* —
 `tbd ready` / `tbd show <id>`. **Merge, not close, is the unblock signal** (doctrine §Policy-4), so a
-merged-but-open Policy-4 bead still unblocks its dependents.
+merged-but-open Policy-4 bead still unblocks its dependents. Then **group the ready beads by their
+`group:<window-N>` label** — a window is dispatchable once *all* its beads are ready. The dispatch
+unit is the **window**.
 
-**5b. File-disjoint guard.** Pairwise-intersect each ready bead's **Files**. Any collision splits the
-colliding beads into **consecutive sub-waves** — merge one, re-gate, then the next branches off the
-new tip. This is a second net over graph-spec's edges (doctrine §Supporting → *File-disjoint waves*;
-FMEA #3). Never run two beads that touch the same file in one wave.
+**5b. File-disjoint guard (across windows).** Pairwise-intersect each ready *window's* **Files**
+(the union of its beads' Files). Any collision splits the colliding windows into **consecutive
+sub-waves** — merge one, re-gate, then the next branches off the new tip. This is a second net over
+graph-spec's partition + edges (doctrine §Supporting → *File-disjoint waves*; FMEA #3). Never run two
+windows that touch the same file in one wave. (Within a window, beads co-edit shared files *by
+construction* — that's why they share one worktree and run sequentially, not in parallel.)
 
-**5c. Dispatch — per ready bead:**
+**5c. Dispatch — per ready window:**
 
-1. `tbd update <id> --status in_progress` (orchestrator-only write).
-2. `git worktree add <path> -b <bead-branch> feat/<epic-slug>` — off the **current integration tip**, so it already contains merged blockers. Never branch off stale trunk.
-3. Copy every `worktree-seed[]` path from the primary checkout into the worktree (gitignored build inputs a fresh worktree lacks), then run `toolchain-pin.install` in the worktree. Seed **before** dispatch or the gate fails on a phantom (doctrine §Supporting → *Seed …*; FMEA #2).
-4. Dispatch **one `bead-implementer`** (Agent tool / Task tool / Workflow stage) with, inlined:
-   - the bead's **Goal / Files / Gate** — the gate fully **env-resolved** (`toolchain-pin.env` prefix + `gate.*` literals + any bead override), so it resolves in a worktree with no shell version-manager;
-   - the plan/spec link and the relevant `CLAUDE.md`;
-   - the standing rule verbatim — *"no tbd, no git push — implement, run the gate, report pass/fail + a diff summary."*
-   - if the bead carries an out-of-band gate, say so, and ask for the out-of-band checklist + the single swappable seam.
+1. `tbd update <id> --status in_progress` for **each bead in the window** (orchestrator-only write).
+2. `git worktree add <path> -b <window-branch> feat/<epic-slug>` — **one worktree per window**, off the **current integration tip**, so it already contains merged blockers. Never branch off stale trunk.
+3. Copy every `worktree-seed[]` path from the primary checkout into the worktree, then run `toolchain-pin.install` **once for the window** (seeding cost is O(K windows), not O(N beads)). Seed **before** dispatch or the gate fails on a phantom (doctrine §Supporting → *Seed …*; FMEA #2). `toolchain-pin.install` must stay idempotent.
+4. Dispatch **one group-runner** (`bead-implementer`; Agent tool / Task tool / Workflow stage) with, inlined:
+   - the window id and its **N sequenced bead tuples** — each `{Goal_i, Files_i, Gate_i, spec-ref_i}`, the gate fully **env-resolved** (`toolchain-pin.env` prefix + `gate.*` literals + any bead override), so it resolves in a worktree with no shell version-manager;
+   - the relevant `CLAUDE.md`;
+   - the standing rule verbatim — *"no tbd, no git push — implement each bead in sequence, run each bead's gate, report a per-bead pass/fail ledger + a diff summary."*
+   - for any bead carrying an out-of-band gate, say so, and ask for that bead's out-of-band checklist + the single swappable seam.
 
-**5d. Collect results:**
+**5d. Collect results (read the per-bead ledger).** The group-runner returns a per-bead ledger
+(`pass | fail | unstarted`) covering every bead in the window:
 
-- **Green** → merge `<bead-branch>` → `feat/<epic-slug>`; `git worktree remove <path>` (hygiene — an unchanged worktree auto-cleans). Newly-unblocked dependents dispatch off the updated tip.
-- **Red** → keep the bead open, `tbd update <id> --notes "<failure>"`; do **not** merge. Block only *its* transitive dependents — **siblings continue** (partial progress is a core DAG win; FMEA — mid-wave failure). Fix or escalate.
+- **All-pass** → merge `<window-branch>` → `feat/<epic-slug>`; `git worktree remove <path>` (hygiene — an unchanged worktree auto-cleans). Newly-unblocked dependents dispatch off the updated tip.
+- **Stopped mid-window at bead *i*** → the runner leaves clean per-bead commits for the `pass` prefix (beads 1..i-1). Merge that green prefix if the ledger shows those beads gated green; keep bead *i* and the `unstarted` remainder **open**, `tbd update <id> --notes "<failure>"`. Block only the transitive dependents of the open beads — **sibling windows continue** (partial progress is a core DAG win; FMEA — mid-window failure). Fix or escalate the failed bead.
 
 **5e. Re-gate the integrated tip.** After the wave's merges, the *orchestrator* runs the declared
 `gate.*` once on `feat/<epic-slug>`. Two independently-green branches can still fail composed
@@ -138,9 +161,10 @@ next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the use
 
 ### Step 6. Epic close
 
-1. **One** `tbd sync` — orchestrator-only, at epic close (or an explicitly agreed checkpoint). `auto_sync` stays off; never sync mid-flight from a worktree (doctrine §Policy-3 → *Batch sync*).
-2. Land `feat/<epic-slug>` on trunk as **one signed commit**: `git switch <trunk>` → `git merge --squash feat/<epic-slug>` → `git commit -S -m "..."`. Squash keeps the unsigned bead commits out of trunk history.
-3. **Restore `commit.gpgsign true` unconditionally** — including on the abort / rollback path. This restore is idempotent; never leave signing disabled past the run (doctrine §Supporting → *Unattended signing*; FMEA #1).
+1. **Write `.substrate/execution-state.json`** — the durable run-state, before the squash. Record, under the `<epic>` key: the `run-id`, the **chosen `partition`** (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons, mirroring the run-log), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed alongside the squash.
+2. **One** `tbd sync` — orchestrator-only, at epic close (or an explicitly agreed checkpoint). `auto_sync` stays off; never sync mid-flight from a worktree (doctrine §Policy-3 → *Batch sync*).
+3. Land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git switch <trunk>` → `git merge --squash feat/<epic-slug>` → `git commit -S -m "..."`. Squash keeps the unsigned bead commits out of trunk history.
+4. **Restore `commit.gpgsign true` unconditionally** — including on the abort / rollback path. This restore is idempotent; never leave signing disabled past the run (doctrine §Supporting → *Unattended signing*; FMEA #1).
 
 ## CC Workflow fast-path (v1, optional at runtime)
 
