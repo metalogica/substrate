@@ -17,7 +17,20 @@ gate:
 #      command: "<command>"
 #      when: phase-tagged      # phase-tagged | manual
 #
-# worktree-seed: []            # gitignored paths (globs) to copy into each fresh worktree
+# worktree-seed[] + toolchain-pin: what /substrate:orchestrate copies into each fresh git
+# worktree before dispatching a bead (a worktree contains only TRACKED files). Declare these
+# whenever a fresh worktree would LACK a gitignored input your gate needs — otherwise the gate
+# fails spuriously and the orchestrator falls back to hand-seeding every run. Common inputs:
+# a virtualenv (.venv), dependency dirs (node_modules), generated clients / codegen output,
+# env files (.env*). Leave empty ONLY if a fresh worktree passes the gate with no extra setup.
+# /substrate:orchestrate warns before dispatch if this is empty but your .gitignore names
+# build/dep paths the gate plausibly needs. See agents-parallel-execution-doctrine.md §Supporting.
+#
+# worktree-seed:               # gitignored paths (globs) copied into each fresh worktree
+#   - ".venv"
+#   - "node_modules"
+#   - "<generated-client-or-codegen-output>"
 # toolchain-pin:
-#   install: "<command>"       # per-worktree dependency install
-#   env: {}                    # resolved env injected into gate commands
+#   install: "<per-worktree dependency install, e.g. uv sync · pnpm install --frozen-lockfile>"
+#   env:                       # resolved env prefixed onto every gate command in a worktree
+#     KEY: "value"             # e.g. MIGRATIONS_DATABASE_URL: "postgresql://…"

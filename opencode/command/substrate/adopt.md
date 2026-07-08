@@ -65,6 +65,14 @@ Ask (end each with `[type 'default' to let me decide sensible defaults]`):
 3. **Lint command** — (e.g. `eslint .`, `cargo clippy`, `uv run ruff check .`, `golangci-lint run`).
 4. **Project name** — for `AGENTS.md`'s H1. Default: the repo directory basename.
 5. **One-line description** — for `AGENTS.md`. Default: `A substrate-governed repository.`
+6. **Worktree seed** — "Would a fresh `git worktree` of this repo *fail the gate* because it
+   lacks a **gitignored** input? (a virtualenv `.venv`, dep dirs `node_modules`, generated
+   clients / codegen output, `.env*` files). If so, list those paths, the per-worktree install
+   command (e.g. `uv sync`, `pnpm install --frozen-lockfile`), and any env the gate needs
+   (e.g. a DB URL for a migration gate)." Default: **inspect `.gitignore` + the gate commands**
+   and propose a `worktree-seed[]` + `toolchain-pin` set, then confirm. This is what
+   `/substrate/orchestrate` copies into each worktree before dispatch — declaring it now saves
+   hand-seeding on every future fleet run (see `agents-parallel-execution-doctrine.md §Supporting`).
 
 If the user picks `default` on the gate commands, inspect the repo's manifest files, propose
 concrete commands, and **confirm them** before writing — a wrong gate makes `/substrate/execute`
@@ -89,6 +97,12 @@ cp -R "$SUBSTRATE_ROOT/references/docs-core/." ./
 Then substitute tokens with the Step-3 answers (use edit, or `sed`), in `AGENTS.md` and `substrate.yaml`:
 - `{{PROJECT_NAME}}`, `{{PROJECT_DESCRIPTION}}` → `AGENTS.md`
 - `{{GATE_COMPILE}}`, `{{GATE_TEST}}`, `{{GATE_LINT}}` → `substrate.yaml`
+
+If the Step-3 **worktree seed** answer named any inputs, write a **populated, uncommented**
+`worktree-seed:` list + `toolchain-pin.{install,env}` block into `substrate.yaml` (replace the
+commented guidance stub the template ships). If the answer was "none needed", leave the commented
+guidance in place — but do **not** silently skip the question: an empty seed on a repo whose gate
+needs gitignored inputs is exactly the failure `/substrate/orchestrate` later hits.
 
 Do **not** substitute anything inside `docs/doctrine/` or `docs/protocol/sdd/` — those ship verbatim.
 
@@ -145,6 +159,9 @@ Next:
   without the user's explicit choice (Step 4 / REFUSE table).
 - MUST fill `substrate.yaml`'s three gate commands from the user — never leave the `{{GATE_*}}`
   tokens in place (a token-valued gate makes `/substrate/execute` run a literal placeholder).
+- MUST ask the Step-3 **worktree-seed** question rather than silently shipping the empty commented
+  stub — declare a populated `worktree-seed[]`/`toolchain-pin` block when the repo's gate needs
+  gitignored inputs, so `/substrate/orchestrate` auto-seeds instead of the orchestrator hand-seeding.
 - MUST leave `doctrine-lint.sh` **green** before printing the handoff. A red adopt is a failed adopt.
 - MUST keep `AGENTS.md` canonical with `CLAUDE.md` a symlink to it (macOS/Linux; Windows users work
   under WSL's Linux path).

@@ -73,6 +73,15 @@ Read `gate.{compile,test,lint}`, optional `gate.out-of-band`, `worktree-seed[]`,
 `toolchain-pin.{install,env}`. **Abort with an explanation if the `gate` block is missing** — do not
 probe a toolchain (root CLAUDE.md policy; FMEA #2 phantom-gate mitigation depends on these keys).
 
+**Warn on an undeclared seed (no-silent-fallback).** If `worktree-seed` is absent or empty **and**
+the repo's `.gitignore` names build/dependency paths the gate plausibly needs (`node_modules`,
+`.venv`/`venv`, `target`, `dist`/`build`, generated-client/codegen dirs, `.env*`), do **not** proceed
+silently: warn that a fresh worktree contains only *tracked* files, so the gate may fail spuriously,
+and that seeding will then fall to manual per-run copying. Point the user at `substrate.yaml`'s
+`worktree-seed[]`/`toolchain-pin` block (populate it — `/substrate:adopt` can, or edit by hand) and
+**pause for confirm-to-proceed-unseeded**. This is a warning, not an abort: a repo whose gate needs
+no gitignored input is free to run with an empty seed.
+
 ### Step 4. Setup — integration branch + unattended signing
 
 ```bash
@@ -145,6 +154,7 @@ on OpenCode. Do not hardwire Workflow as the sole mechanism.
 
 - MUST read the DAG from `bead-graph.sh --epic <slug>`; MUST NOT re-derive it. Fail-fast on a parse error before any worktree exists.
 - MUST abort with an explanation if `substrate.yaml`'s `gate` block is missing — never probe a toolchain.
+- MUST warn (not abort) before dispatch when `worktree-seed` is undeclared but `.gitignore` names build/dep paths the gate plausibly needs, and pause for confirm — never silently dispatch into worktrees that will fail the gate on an unseeded input (no-silent-fallback).
 - MUST honor the **single-writer** invariant: only the orchestrator runs `tbd update`/`close`/`sync` or `git push`. Subagents receive Goal/Files/Gate inlined and return a result.
 - MUST branch each bead worktree off the **current integration tip**, merge-on-green, and **re-gate the integrated tip** each wave.
 - MUST enforce **file-disjoint** waves (pairwise-Files guard) beyond graph-spec's edges.
