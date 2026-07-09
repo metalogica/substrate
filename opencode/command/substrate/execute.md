@@ -135,7 +135,7 @@ Wait for explicit approval. `n` or `pause` stops execution cleanly so the user c
 
 ### Step 4. Final phase: Doctrine Review
 
-The last phase is always `Phase N: Doctrine Review` per `spec-template.md`. It's not code — it's a compliance check. Walk its steps like any other phase: run the doctrine-review prompt, write `docs/tasks/ongoing/<feature>/doctrine-amendments.md` if amendments are needed, run the gate.
+The last phase is always `Phase N: Doctrine Review` per `spec-template.md`. It's not code — it's a compliance check. Walk its steps like any other phase: run the doctrine-review prompt, then persist any amendments **tracker-aware, exactly as the template's Step N.1 now specifies** — under `bead-tracker: none` write `docs/tasks/ongoing/<feature>/doctrine-amendments.md`; under `bead-tracker: tbd` write **no** working-tree markdown and instead report the findings for `/substrate:synthesize-session` to queue as `type: doctrine-amendment` beads — then run the gate.
 
 ### Step 5. Archive the task
 

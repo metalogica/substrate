@@ -153,10 +153,8 @@ For each relevant doctrine, answer these questions:
 4. **Missing Coverage**: Did we encounter scenarios doctrine doesn't address?
    - If YES: Document the gap
 
-If ANY amendments are needed, create:
-`docs/tasks/ongoing/<feature>/doctrine-amendments.md`
+If ANY amendments are needed, capture them in this standard shape:
 
-Format for amendments file:
 ```markdown
 # Doctrine Amendments: <Feature>
 
@@ -173,30 +171,34 @@ Format for amendments file:
 - [doctrine]: [scenario not covered]
 ```
 
-If no amendments needed, this step passes automatically.
+If no amendments are needed, this step passes automatically.
+
+**Where the amendments go is tracker-dependent** — resolve the bead-tracker exactly as `/substrate:synthesize-session` does (honor `.substrate/config.json`'s `"bead-tracker"` if set; else auto-detect `tbd` when `.tbd/config.yml` exists AND a `tbd` binary is callable — `command -v tbd` OR `npx --no-install get-tbd --version` — else `none`):
+
+- **`bead-tracker: none`** — the `.md` is the queue. Write the amendments to `docs/tasks/ongoing/<feature>/doctrine-amendments.md`. This is canonical.
+- **`bead-tracker: tbd`** — **do NOT write any markdown under `docs/tasks/ongoing/**`** (the working tree is not a source of truth in a tbd repo), and **do NOT call `tbd` from inside this phase**. When this phase runs under `/substrate:orchestrate` it is a bead executed by a group-runner, which is forbidden from touching the tracker (single-writer stays with the orchestrator). Instead, **emit the amendment findings in this phase's completion report** and defer the actual queuing to `/substrate:synthesize-session` Step 5 — the depth-0, single-writer, tracker-aware sink that renders each amendment to an ephemeral tempfile → `tbd create --type doctrine-amendment` (`status: queued`) → unlink. This keeps amendments off the working tree and out of the group-runner's hands while preserving them for human triage.
 
 ##### Verify
 
-- `test -f docs/tasks/ongoing/<feature>/doctrine-amendments.md && echo "Amendments documented" || echo "No amendments needed"`
+- `bead-tracker: none` → `test -f docs/tasks/ongoing/<feature>/doctrine-amendments.md && echo "Amendments documented" || echo "No amendments needed"`
+- `bead-tracker: tbd` → `echo "Doctrine review complete — amendments (if any) reported for /substrate:synthesize-session to queue as type=doctrine-amendment beads"`
 
-#### Step N.2: Commit Doctrine Amendments (if any)
+#### Step N.2: Route Doctrine Amendments for Human Review (if any)
 
-If `doctrine-amendments.md` exists, create a follow-up task to review and merge amendments into doctrines.
+Only relevant when `bead-tracker: none`. If `docs/tasks/ongoing/<feature>/doctrine-amendments.md` exists, promote it to the shared review queue so it survives spec archival:
 
-Add to `docs/tasks/ongoing/doctrine-updates/` if it doesn't exist:
 ```bash
 mkdir -p docs/tasks/ongoing/doctrine-updates
-```
-
-Move amendments for human review:
-```bash
 cp docs/tasks/ongoing/<feature>/doctrine-amendments.md \
    docs/tasks/ongoing/doctrine-updates/<feature>-amendments.md
 ```
 
+Under `bead-tracker: tbd` this step is a **no-op** — the amendments are queued as `type: doctrine-amendment` beads by `/substrate:synthesize-session`, not as files. Do not create `docs/tasks/ongoing/doctrine-updates/` in a tbd repo.
+
 ##### Verify
 
-- `ls docs/tasks/ongoing/doctrine-updates/ 2>/dev/null || echo "No doctrine updates pending"`
+- `bead-tracker: none` → `ls docs/tasks/ongoing/doctrine-updates/ 2>/dev/null || echo "No doctrine updates pending"`
+- `bead-tracker: tbd` → `echo "Amendments deferred to synthesize-session (tbd is canonical — no working-tree files)"`
 
 ---
 
