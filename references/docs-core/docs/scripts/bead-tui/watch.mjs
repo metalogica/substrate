@@ -187,7 +187,11 @@ function partitionForView(view) {
     deviations = Array.isArray(state.deviations) ? state.deviations.length : 0;
     windows = Object.entries(state.partition).map(([name, beadIds]) => ({
       name,
-      beads: (beadIds || []).map((id) => {
+      // execution-state.json is written incrementally per wave, so a live watcher can hit a
+      // partial/transitional partition value that isn't yet the schema's string[] (doctrine
+      // §Grouping & windows). Guard like the sibling read at deviations above — a malformed
+      // window degrades to empty, never crashes the render loop.
+      beads: (Array.isArray(beadIds) ? beadIds : Array.isArray(beadIds?.beads) ? beadIds.beads : []).map((id) => {
         const oc = (state.outcomes || {})[id] || {};
         return { id, status: oc.status || null, commit: oc.commit || null };
       }),
