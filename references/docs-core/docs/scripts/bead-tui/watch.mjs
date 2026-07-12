@@ -107,8 +107,12 @@ async function refreshMembership() {
   const epics = [...slugTs.entries()]
     .filter(([slug]) => active(slug))                                   // hide fully-closed (done) epics from the tabs
     .map(([slug, ts]) => ({ slug, ts })).sort((a, b) => (a.ts < b.ts ? 1 : -1));
-  const unassigned = new Set([...SNAP.rows.values()].filter((r) => r.kind !== 'epic' && !claimed.has(r.id)).map((r) => r.id));
-  MEMBERSHIP = { epics, memberIds, unassigned };
+  // Orphan beads (no epic: label). Split by status so closed work gets its own
+  // 'completed' tab instead of cluttering 'unassigned' with done items.
+  const orphans = [...SNAP.rows.values()].filter((r) => r.kind !== 'epic' && !claimed.has(r.id));
+  const unassigned = new Set(orphans.filter((r) => r.status !== 'closed').map((r) => r.id));
+  const completed = new Set(orphans.filter((r) => r.status === 'closed').map((r) => r.id));
+  MEMBERSHIP = { epics, memberIds, unassigned, completed };
 }
 
 async function resolveViews() {
@@ -117,13 +121,14 @@ async function resolveViews() {
     await refreshSnapshot();
     const ids = new Set((await tlist(['--label', `epic:${EPIC}`, '--all'])).filter((r) => r.kind !== 'epic').map((r) => r.id));
     if (!ids.size) die(`no beads found for epic:${EPIC} (is it seeded and labelled?).`);
-    MEMBERSHIP = { epics: [{ slug: EPIC, ts: '' }], memberIds: new Map([[EPIC, ids]]), unassigned: new Set() };
+    MEMBERSHIP = { epics: [{ slug: EPIC, ts: '' }], memberIds: new Map([[EPIC, ids]]), unassigned: new Set(), completed: new Set() };
     return [{ key: `epic:${EPIC}`, type: 'epic', slug: EPIC }];
   }
   if (await tbdAvailable()) {
     await refreshSnapshot(); await refreshMembership();
     const views = MEMBERSHIP.epics.map((e) => ({ key: `epic:${e.slug}`, type: 'epic', slug: e.slug }));
     if (MEMBERSHIP.unassigned.size) views.push({ key: 'unassigned', type: 'unassigned' });
+    if (MEMBERSHIP.completed.size) views.push({ key: 'completed', type: 'completed' });
     if (views.length) return views;
   }
   return [{ key: `fixture:${basename(DEFAULT_FIXTURE)}`, type: 'fixture', path: DEFAULT_FIXTURE }];
@@ -134,7 +139,9 @@ async function resolveViews() {
 //   tab-switching are instant even while a background fetch is in flight.
 function graphForView(view) {
   if (view.type === 'fixture') { const g = jparse(readFileSync(view.path, 'utf8'), { nodes: [], edges: [] }); return { nodes: g.nodes, edges: g.edges }; }
-  const ids = view.type === 'unassigned' ? (MEMBERSHIP?.unassigned || new Set()) : (MEMBERSHIP?.memberIds.get(view.slug) || new Set());
+  const ids = view.type === 'unassigned' ? (MEMBERSHIP?.unassigned || new Set())
+    : view.type === 'completed' ? (MEMBERSHIP?.completed || new Set())
+      : (MEMBERSHIP?.memberIds.get(view.slug) || new Set());
   const nodes = [...ids].map((id) => SNAP.rows.get(id)).filter(Boolean).map((r) => ({ id: r.id, title: r.title, status: r.status }));
   const edges = [];
   for (const id of ids) for (const b of (SNAP.edges.get(id) || [])) if (ids.has(b)) edges.push({ from: b, to: id });
@@ -313,7 +320,7 @@ function sourceMtime(view) {   // fixture views only; tbd views are content-poll
   try { return statSync(view.path).mtimeMs; } catch { return 0; }
 }
 const statusMap = (graph) => new Map(graph.nodes.map((n) => [n.id, n.status]));
-const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'unassigned' ? 'unassigned beads' : `epic:${view.slug}`;
+const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'unassigned' ? 'unassigned beads' : view.type === 'completed' ? 'completed beads' : `epic:${view.slug}`;
 
 // ---- terminal / input -------------------------------------------------------
 let raw = false;
