@@ -277,7 +277,16 @@ function render(graph, meta, deltas) {
   lines.push('');
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  const nav = meta.views.length > 1 ? `${C.dim} · Tab/→ ←/Shift-Tab · q quit${C.reset}` : '';
+  let nav = '';
+  if (meta.interactive) {
+    const bits = [];
+    if (meta.views.length > 1) bits.push('Tab/→ ←/Shift-Tab');
+    if (meta.selectedId) bits.push('↑↓ select · Enter details');
+    bits.push('q quit');
+    nav = ` ${C.dim}· ${bits.join(' · ')}${C.reset}`;
+  } else if (meta.views.length > 1) {
+    nav = `${C.dim} · Tab/→ ←/Shift-Tab · q quit${C.reset}`;
+  }
   lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   if (!graph.nodes.length) { lines.push(`${C.dim}(no beads)${C.reset}`); return lines.join('\n'); }
@@ -301,7 +310,10 @@ function render(graph, meta, deltas) {
       let tag = '';
       if (deltas.appeared.has(id)) tag = `  ${C.in_progress}← NEW${C.reset}`;
       else if (deltas.doneNow.has(id)) tag = `  ${C.closed}✓ done${C.reset}`;
-      lines.push(` ${C.dim}${branch}${C.reset} ${C[gs]}${GLYPH[gs]} ${id}${C.reset}  ${C.title}${n.title}${C.reset}${from}${tag}`);
+      const sel = id === meta.selectedId;
+      const cursor = sel ? `${C.rev}▸${C.unrev}` : ' ';
+      const title = sel ? `${C.rev}${n.title}${C.unrev}` : `${C.title}${n.title}${C.reset}`;
+      lines.push(` ${C.dim}${branch}${C.reset}${cursor}${C[gs]}${GLYPH[gs]} ${id}${C.reset}  ${title}${from}${tag}`);
     }
     if (waveHasRemaining) remainingWavesCount++;
     lines.push('');
@@ -332,7 +344,42 @@ process.on('exit', restore);
 let active = 0;
 let updates = 0;
 let frame = 0;
+let selected = 0;                           // bead cursor within the active view (interactive TTY only)
+let detail = null;                          // opened bead detail object (tbd show), or null for list mode
+let detailLoading = false;                  // Enter pressed, tbd show in flight
 const prevStatus = new Map();               // view.key → Map(id→status), drives NEW/done deltas
+
+// Beads in the exact order render() emits them (Kahn waves, capped at MAX_NODES), so the
+// ↑/↓ cursor lines up 1:1 with what's on screen.
+const orderedIds = (graph) => analyze(graph).waves.flat().slice(0, MAX_NODES);
+
+// Detail overlay for one bead (tbd show), rendered instead of the list when `detail` is set.
+function detailPane(b) {
+  if (!b || !Object.keys(b).length) return `\n${C.blocked}could not load bead.${C.reset}\n\n${C.dim}Esc back · q quit${C.reset}`;
+  const g = GLYPH[b.status] || GLYPH.open, col = C[b.status] || C.open;
+  const fmtTs = (s) => s ? String(s).slice(0, 16).replace('T', ' ') : '?';
+  const wrap = (s, w) => {
+    const out = []; let line = '';
+    for (const word of String(s).split(/\s+/)) {
+      if (line && (line + ' ' + word).length > w) { out.push(line); line = word; }
+      else line = line ? `${line} ${word}` : word;
+    }
+    if (line) out.push(line);
+    return out;
+  };
+  const deps = (b.dependencies || []).map((d) => (typeof d === 'string' ? d : d?.displayId || d?.id || '')).filter(Boolean);
+  const lines = [''];
+  lines.push(`${C.bold}${b.displayId || b.id}${C.reset}   ${C.dim}${b.kind || ''}${C.reset}   ${col}${g} ${b.status}${C.reset}${b.priority != null ? `   ${C.dim}P${b.priority}${C.reset}` : ''}`);
+  lines.push('');
+  lines.push(`${C.title}${b.title || '(untitled)'}${C.reset}`);
+  if ((b.labels || []).length) lines.push(`${C.dim}labels:${C.reset} ${b.labels.join('  ')}`);
+  if (deps.length) lines.push(`${C.dim}blocked by:${C.reset} ${deps.join(', ')}`);
+  lines.push(`${C.dim}created ${fmtTs(b.created_at)} · updated ${fmtTs(b.updated_at)}${C.reset}`);
+  if (b.description) { lines.push(''); for (const l of wrap(b.description, 76)) lines.push(l); }
+  lines.push('');
+  lines.push(`${C.dim}Esc back · q quit${C.reset}`);
+  return lines.join('\n');
+}
 
 function draw() {
   const view = VIEWS[active];
@@ -345,8 +392,17 @@ function draw() {
     else if (st === 'closed' && prev.get(id) !== 'closed') doneNow.add(id);
   }
   prevStatus.set(view.key, cur);
-  const partition = partitionForView(view);
-  const out = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition }, { appeared, doneNow });
+  const order = orderedIds(graph);
+  selected = Math.min(Math.max(0, selected), Math.max(0, order.length - 1));   // clamp to current list
+  const interactive = !ONCE && process.stdin.isTTY;
+  let out;
+  if (detailLoading) out = `\n${C.dim}loading bead…${C.reset}`;
+  else if (detail) out = detailPane(detail);
+  else {
+    const partition = partitionForView(view);
+    const selectedId = interactive && order.length ? order[selected] : null;
+    out = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition, selectedId, interactive }, { appeared, doneNow });
+  }
   process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);
   frame++;
 }
@@ -367,11 +423,23 @@ let lastMtime = sourceMtime(VIEWS[active]);
 
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
-  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); draw(); };
-  process.stdin.on('data', (k) => {
-    if (k === '\t' || k === '\x1b[C') nav(+1);              // Tab / →
+  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); selected = 0; detail = null; draw(); };
+  const move = (d) => { selected += d; draw(); };            // draw() clamps to the current list
+  process.stdin.on('data', async (k) => {
+    if (k === 'q' || k === '\x03') { restore(); process.stdout.write('\n'); process.exit(0); }  // global quit
+    else if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } }           // modal: Esc closes
+    else if (k === '\x1b[A' || k === 'k') move(-1);          // ↑ / k
+    else if (k === '\x1b[B' || k === 'j') move(+1);          // ↓ / j
+    else if (k === '\r' || k === '\n') {                     // Enter → open bead detail
+      const view = VIEWS[active];
+      if (view.type === 'fixture') return;                  // fixture ids aren't real tbd beads
+      const id = orderedIds(graphForView(view))[selected];
+      if (!id) return;
+      detailLoading = true; draw();
+      detail = await tshow(id); detailLoading = false; draw();
+    }
+    else if (k === '\t' || k === '\x1b[C') nav(+1);          // Tab / →
     else if (k === '\x1b[Z' || k === '\x1b[D') nav(-1);      // Shift-Tab / ←
-    else if (k === 'q' || k === '\x03') { restore(); process.stdout.write('\n'); process.exit(0); }
   });
 }
 
