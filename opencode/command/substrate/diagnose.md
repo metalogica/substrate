@@ -1,5 +1,5 @@
 ---
-description: "Diagnose a specific error and ship the fix. Takes an explicit error message + optional file:line / timestamp / repro steps. Matches the failure to the relevant doctrine via a path-layer + manifest-trigger + symbol-search composite, generates ranked hypotheses with evidence, implements the chosen fix, verifies both the green gate AND that the original error no longer reproduces, then commits. Loops on failure with accumulated context. Use this when you have a known error and need root cause + fix; use /substrate/quick-spec when you already know what to change."
+description: "Diagnose a specific error and ship the fix. Takes an explicit error message + optional file:line / timestamp / repro steps. Matches the failure to the relevant doctrine via a path-layer + manifest-trigger + symbol-search composite, generates ranked hypotheses with evidence, then dispositions the fix: patch inline (verify both the green gate AND that the original error no longer reproduces, then commit), or — when the root cause is known but the fix is multi-bead / crosses file-windows — graph it into a Spike→Fix bug epic under the canonical epic:<slug> label plus an additive kind:bug tag, ready for /substrate/orchestrate or /substrate/execute. Loops on failure with accumulated context. Use this when you have a known error and need root cause + fix; use /substrate/quick-spec when you already know what to change."
 ---
 
 # /substrate/diagnose
@@ -12,7 +12,7 @@ Targeted bug-fix loop. Takes a known error, routes it to the relevant doctrine, 
 - `/substrate/quick-spec` — you already know what change to make; this is small feature work, not bug-finding.
 - `/substrate/architect-spec` — the fix crosses multiple layers AND requires schema changes or new abstractions.
 
-If diagnosis reveals the fix is too big for a single-pass loop, escalate to `/substrate/architect-spec` at Step 3d.
+Diagnosis has three dispositions once the root cause is known (chosen at Step 3d): **patch inline** (default — small, certain, single-window), **graph a bug epic** (root cause known but the fix is multi-bead / crosses file-windows — emits a Spike→Fix DAG and hands off to the executor), or **escalate to `/substrate/architect-spec`** (the fix needs new schema/abstraction across 3+ layers, i.e. re-specification, not just execution).
 
 ## Arguments
 
@@ -117,13 +117,46 @@ Mirrors `/substrate/quick-spec`'s 1a–1e but oriented around the error, not a f
 - Evidence: which doctrine rule is violated (with citation), which stack frame supports it, similar working code elsewhere in the repo.
 - Proposed fix: concrete files + lines + change.
 
-**3d. Escalation check.** If any hypothesis requires touching 3+ layers OR introducing a new schema/abstraction, STOP and tell the user this is `/substrate/architect-spec` scope. Do not try to fix it in this loop.
+**3d. Disposition check.** Once a hypothesis names the root cause, decide *how* to land the fix. Three outcomes, in order of increasing weight:
 
-**3e. Present** the hypotheses to the user. They pick (`1` / `2` / `3` / `modify` / `escalate`). Do not implement until they pick.
+| Disposition | When it fires | Where it goes |
+|---|---|---|
+| **inline** (default) | The fix is small and certain — one or two files, single file-window, no cross-layer ripple. | Steps 4–8 (implement → verify → commit), unchanged. |
+| **bug epic** | Root cause is known but the fix is **multi-bead**, spans **disjoint file-windows**, or you'd otherwise want it run as a parallel fleet. Not a re-specification — the *what* is understood, only the *doing* is larger than one loop. | **Step 3.5** — graph a Spike→Fix bug epic, then exit the loop and hand off to `/substrate/orchestrate` or `/substrate/execute`. |
+| **escalate** | The fix needs a **new schema/abstraction across 3+ layers** — the design itself is unsettled. | STOP; this is `/substrate/architect-spec` scope. Do not fix or graph it here. |
+
+The bug-epic path is the middle tier the loop previously lacked: root cause found, but the implementation is too big for one in-session patch and too well-understood to need re-specification.
+
+**3e. Present** the hypotheses AND the recommended disposition to the user. They pick a hypothesis (`1` / `2` / `3` / `modify`) and confirm or override the disposition (`inline` / `bug-epic` / `escalate`). Do not act until they pick.
+
+### Step 3.5 — Graph into a bug epic (deferred-fix path)
+
+Only when Step 3d's disposition is **bug-epic**. This reuses `/substrate/graph-spec`'s bead-creation mechanic so the executor can consume the result unchanged — the same DAG contract, differentiated by one additive tag.
+
+**Slug + labels.** Derive `<slug>` = `bugfix-<short-error-slug>` (kebab, from the error's failing symbol or one-line summary). Every bead — epic and children — carries:
+
+- `epic:bugfix-<slug>` — the **canonical** epic label. This is non-negotiable: it is the join key `/substrate/orchestrate`, `/substrate/execute`, `bead-graph.sh`, and the bead-TUI read. A bug epic is a first-class epic, not a parallel scheme.
+- `kind:bug` — the **additive** differentiator. It is layered *on top of* the canonical label, never in place of it. The TUI filters/colours bug epics by this tag; the executor ignores it. This is what lets the epic be "differentiated yet still runnable" at once.
+
+**Shape — Spike→Fix.** Create one epic bead, then:
+
+1. **Spike bead** — `tbd create "Spike: <root-cause one-liner>" --type task --parent <epic-id> -l "epic:bugfix-<slug>" -l "kind:bug" -l "group:<window-1>" --file <tmp>`. Its body is the **state transfer**: the matched doctrine + rule citation, the chosen hypothesis with evidence, and the exact repro. Diagnosis has already done most of this work — if the root cause is fully nailed, note in the body that the spike is satisfied-on-arrival and its only job is to confirm the approach before the fix lands.
+2. **Fix bead(s)** — one per file-window of the fix: `tbd create "Fix: <action>" --type task --parent <epic-id> -l "epic:bugfix-<slug>" -l "kind:bug" -l "group:<window-N>" --file <tmp>`, each with `blocked-by: <spike-id>` in its body/edge so the fix waits on the spike. Partition the fix across `group:<window-N>` labels by file-adjacency exactly as graph-spec does — that partition is what the orchestrator dispatches as parallel windows.
+
+Use a `mktemp` tempfile per bead (spec-ref / summary body) and unlink it unconditionally after create, even on failure — same discipline as graph-spec Step 6.
+
+**Hand off and exit the loop.** Print the DAG (`docs/scripts/bead-graph.sh` if present) and stop here — the deferred path does **not** run Steps 4–8, does **not** commit code, and does **not** push:
+
+```
+Bug epic graphed: epic:bugfix-<slug>  (kind:bug)  ·  1 epic + 1 spike + N fix beads
+Run it with:
+  /substrate/orchestrate epic:bugfix-<slug>   — parallel worktree fleet
+  /substrate/execute <spec-or-epic>           — attended, single-window
+```
 
 ### Step 4 — Implement fix
 
-With hypothesis approved, implement via edit / write / bash. Same discipline as `/substrate/quick-spec` Step 2.
+Only when Step 3d's disposition is **inline**. With hypothesis approved, implement via edit / write / bash. Same discipline as `/substrate/quick-spec` Step 2.
 
 ### Step 5 — Verify (two gates)
 
@@ -196,7 +229,11 @@ Do NOT push.
 - MUST carry failure context across retry iterations. Each new hypothesis references what the previous attempt missed.
 - MUST NOT push or deploy — `/substrate/deploy` handles that.
 - MUST NOT exceed 3 hypothesis iterations without checking in. After three failed attempts, stop and ask whether to escalate to `/substrate/architect-spec` or abandon.
-- MUST escalate to `/substrate/architect-spec` when Step 3d's heuristic fires (3+ layers OR new schema/abstraction).
+- MUST pick a disposition at Step 3d (inline / bug-epic / escalate) and confirm it with the user before acting. Default to **inline** — the bug-epic path is opt-in for genuinely multi-bead fixes, not a substitute for a one-file patch.
+- MUST, on the **bug-epic** path, tag every bead with the canonical `epic:bugfix-<slug>` label AND the additive `kind:bug` tag. `kind:bug` is layered *on top of* the canonical label — never a replacement epic-labelling scheme. A bug epic that loses `epic:<slug>` is invisible to the orchestrator/executor and defeats the purpose.
+- MUST, on the **bug-epic** path, carry diagnosis's state (matched doctrine + rule citation + chosen hypothesis + repro) into the Spike bead body. The whole point of graphing instead of fixing is to hand off without losing the root-cause work.
+- MUST NOT implement, verify, commit, or push on the **bug-epic** path — Step 3.5 ends by handing off to `/substrate/orchestrate` or `/substrate/execute`. Graphing is the terminal action, mirroring `/substrate/graph-spec`.
+- MUST escalate to `/substrate/architect-spec` when Step 3d's **escalate** tier fires (new schema/abstraction across 3+ layers). Escalate re-specifies; bug-epic only defers a known fix.
 - MUST offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on any clarifying question posed in Step 1. Binary approval gates (`y/n`, `y/n/modify`, hypothesis selection) are exempt.
 - SHOULD attempt exactly one targeted fix on a failing green gate before handing back to the user. Spiraling wastes budget.
 - SHOULD prefer hypotheses grounded in cited doctrine rules over uncited guesses. A hypothesis with a doctrine citation is stronger than one without.
