@@ -17,6 +17,32 @@ execution:
   context-budget: 0.4      # max fraction of a window a group may fill before graph-spec splits it
   default-rung: auto       # auto | monolith | phase | group | per-bead
 
+# --- Cloud dispatch environment (consumed by .github/workflows/substrate-orchestrate.yml) ---
+# OPTIONAL. Present → the repo is cloud-dispatch-enabled: /substrate:dispatch <epic> can fire a
+# GitHub runner that runs `/substrate:orchestrate epic:<slug> --auto --pr` headless and opens a PR
+# whose per-bead commits accumulate live, wave by wave. Absent → dispatch refuses (not an error).
+# /substrate:adopt fills this — auto-detecting `services`/`bootstrap` from an existing CI workflow
+# when one exists, else asking. It prints `secrets-needed` as a manual "add these" instruction and
+# never writes secret VALUES here.
+#
+# NOTE (GitHub constraint): `services:` and `runs-on:` are STATIC job keys — a generic workflow
+# cannot compute them from this block at runtime. adopt therefore token-substitutes them into the
+# copied workflow at install time (this block is the single source of truth for that substitution,
+# not read live).
+#
+# ci:
+#   runner: "ubuntu-latest"          # → runs-on; the single swap point for self-hosted runners later
+#   services:                        # verbatim GitHub Actions `services:` map (omit if none needed)
+#     postgres:
+#       image: "postgres:16-alpine"
+#       env: { POSTGRES_USER: "app", POSTGRES_PASSWORD: "password", POSTGRES_DB: "app" }
+#       ports: ["5433:5432"]
+#       options: "--health-cmd \"pg_isready\" --health-interval 2s --health-timeout 3s --health-retries 15"
+#   bootstrap:                       # ordered shell steps run AFTER toolchain-pin.install, BEFORE orchestrate
+#     - "<db:init / db:migrate / db:seed / codegen — whatever the gate needs in a fresh container>"
+#   secrets-needed:                  # NAMES only (never values) — adopt prints these to add manually
+#     - "ANTHROPIC_API_KEY"          # the headless agent's key; add via `gh secret set`
+
 # --- Optional: parallel-bead execution (see agents-parallel-execution-doctrine.md) ---
 # out-of-band gates (e2e, device, paid service) — not run on every step:
 #  out-of-band:

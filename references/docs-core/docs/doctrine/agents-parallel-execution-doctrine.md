@@ -236,6 +236,37 @@ the DAG degenerates to one bead per window — the steps below are unchanged, N 
    `tbd sync`, and land the integration branch on trunk as one signed squash commit (Policy-4 beads
    close later, as their out-of-band gates pass).
 
+## Remote / cloud orchestration (dispatch)
+
+The same loop runs **in a GitHub runner** via `/substrate:dispatch <epic>` (the cloud door) with
+`/substrate:orchestrate <epic> --auto --pr`. Nothing above changes — single-writer, file-disjoint
+waves, integration branch + merge-on-green, union re-gate — only the *landing* and the *trigger*
+differ. Codified from what the dispatch feature landed:
+
+- **The tracker is the event bus, and it is a branch.** tbd is git-native; beads sync to a dedicated
+  `tbd-sync` branch (`sync.branch`), not to `.tbd/**` on the default branch. So the cloud runner
+  makes beads visible with `git fetch origin tbd-sync` — and the natural event-driven trigger (v2)
+  is a push to `tbd-sync`, never a push to the default branch (which carries no bead data).
+- **Single-writer is preserved across the boundary.** `/substrate:dispatch` performs exactly one
+  `tbd sync` to publish, then only *triggers* (`gh workflow run`); the **in-runner orchestrator is
+  the sole writer** for the epic from there. dispatch never orchestrates locally — the local machine
+  and the runner are never both writing the epic's beads.
+- **`--pr` landing.** In cloud mode the orchestrator does **not** squash to trunk. It pushes
+  `feat/<epic-slug>` after each green wave re-gate (the PR accumulates the per-bead commits live,
+  wave by wave) and leaves the PR open; **GitHub's squash-merge is the single squasher**, re-authoring
+  the unsigned per-bead commits into one commit — so the unsigned-commits-out-of-trunk invariant holds
+  by a different mechanism than the local `git merge --squash`.
+- **Manual before event-driven.** The v1 trigger is manual (`workflow_dispatch`), which structurally
+  eliminates self-retriggering (the runner's own close-time `tbd sync` cannot fire a workflow nothing
+  watches). The event-driven trigger (`on: push: [tbd-sync]`) is a strict superset that additionally
+  requires a **new-epic guard + a persisted `run:<id>` claim-lock** to stay idempotent — the claim,
+  written as the runner's first action, doubles as the single-writer lock.
+
+The declared cloud environment lives in `substrate.yaml`'s `ci:` block (services / bootstrap /
+secrets-needed / runner); `/substrate:adopt` installs it + the `substrate-orchestrate.yml` seam.
+Because GitHub `services:`/`runs-on:` are static job keys, that seam is token-substituted at adopt
+time, not computed at runtime.
+
 ## Why these (the reasoning, so future edits stay faithful)
 
 Single-writer + batch-sync exist because N worktrees writing the same git-backed tracker

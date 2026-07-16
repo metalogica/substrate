@@ -8,7 +8,7 @@ A Claude Code **plugin** that scaffolds full-stack Vite + Convex + Clerk applica
 
 The plugin exposes:
 
-- **13 user-facing skills** under `skills/`:
+- **14 user-facing skills** under `skills/`:
   - `/substrate:init` — scaffold a new project in an empty directory (stage 1)
   - `/substrate:adopt` — install the stack-agnostic docs/doctrine/gate kernel onto an *existing* repo of any language (symmetric opposite of `migrate`); no opinionated stack, wires `substrate.yaml` to the repo's own compile/test/lint
   - `/substrate:migrate` — migrate a Gemini AI Studio prototype into the kernel (stage 2)
@@ -17,6 +17,7 @@ The plugin exposes:
   - `/substrate:graph-spec <spec>` — "Graph the Spec": decompose a written spec into a DAG of tbd beads (epic + children under label `epic:<slug>`, `blocked-by:` edges, Kahn cycle-check), rendered via `docs/scripts/bead-graph.sh`. Called automatically by `architect-spec`; runnable standalone. Produces the DAG only — the parallel-execution doctrine's orchestrator consumes it.
   - `/substrate:orchestrate <epic-or-spec>` — **the primary execution door.** Executes a graphed bead DAG as a parallel worktree fleet per `agents-parallel-execution-doctrine.md`: reads the context-budget partition (`group:<window-N>` labels), cuts a `feat/<epic-slug>` integration branch, dispatches one **group-runner** per file-disjoint ready **window** in its own worktree (one seed+install per window), gates each bead in sequence, merge-on-green, re-gate the integrated tip, pause between waves (`--auto` to skip), writes `.substrate/execution-state.json`, one signed squash commit on trunk. Consumes the DAG; single-writer tracker. Tool-agnostic (Agent↔Task) with a CC-only Workflow fast-path
   - `/substrate:execute <spec>` — **the attended single-window mode** (K=1, human-in-the-loop) — the alternative to the orchestrated default. Executes a spec phase-by-phase with one implementing agent and verification-gate pauses; Step-0 offers to switch to `orchestrate` when the DAG would clearly win as a parallel fleet (≥3 file-disjoint windows + tracker + user confirm), else stays attended
+  - `/substrate:dispatch <epic>` — **the cloud execution door.** Runs a graphed epic on a GitHub runner instead of the local machine: publishes the epic's beads to the `tbd-sync` branch, fires the `substrate-orchestrate.yml` workflow (headless `orchestrate --auto --pr`), and reports the run + PR URLs — the PR then accumulates per-bead commits live, wave by wave, for review + squash-merge. The thin *local trigger* only (single-writer stays with the in-runner orchestrator); requires the repo cloud-dispatch-enabled via `/substrate:adopt` (a `ci:` block + the workflow) and the epic graphed. v1 trigger is manual (`workflow_dispatch`); event-driven (`tbd-sync` watcher) is the documented v2 upgrade
   - `/substrate:quick-spec` — lightweight single-feature iteration loop
   - `/substrate:diagnose <error-context>` — targeted bug-fix loop: matches the error to a doctrine (path-layer + manifest-trigger + symbol-search composite), generates ranked hypotheses, fixes, verifies both green gate AND repro-no-longer-fires, commits
   - `/substrate:synthesize-session` — terminal phase after the executor (`/substrate:orchestrate` or the attended `/substrate:execute`): capture session learning into atomic doctrine fixes, queued amendments, and dependency-ordered beads with state-transfer prompts
@@ -84,7 +85,7 @@ To test scaffolding in isolation, `cd` into a fresh sandbox directory and invoke
 substrate/
 ├── .claude-plugin/plugin.json     # plugin manifest
 ├── agents/                         # 2 subagents (markdown with YAML frontmatter)
-├── skills/                         # 13 user-facing skills
+├── skills/                         # 14 user-facing skills
 │   ├── init/SKILL.md
 │   ├── adopt/SKILL.md
 │   ├── migrate/SKILL.md
@@ -92,6 +93,7 @@ substrate/
 │   ├── graph-spec/SKILL.md         # decompose a spec into a bead DAG
 │   ├── execute/SKILL.md            # attended single-window mode (K=1, HIL); Step-0 offers orchestrate
 │   ├── orchestrate/SKILL.md        # PRIMARY door: bead DAG as a parallel worktree fleet (group-runners)
+│   ├── dispatch/SKILL.md           # CLOUD door: trigger orchestrate --auto --pr on a GitHub runner → live PR
 │   ├── quick-spec/SKILL.md
 │   ├── diagnose/SKILL.md
 │   ├── synthesize-session/SKILL.md
@@ -101,7 +103,7 @@ substrate/
 ├── opencode/                       # OpenCode port (additive; mirrors skills/ + agents/)
 │   ├── README.md                   # SKILL→command translation guide + parity rule
 │   ├── CONVENTIONS.md              # empirically-verified OpenCode facts (dir names, namespacing)
-│   ├── command/substrate/          # 12 commands → /substrate/<name>
+│   ├── command/substrate/          # 13 commands → /substrate/<name>
 │   ├── agent/doctrine-architect.md # mode: subagent
 │   └── agent/bead-implementer.md   # mode: subagent (task: deny)
 ├── references/
@@ -133,7 +135,7 @@ Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skil
 
 ### OpenCode port (additive, kept in parity)
 
-substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 13 skills to
+substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 14 skills to
 OpenCode **commands** (`opencode/command/substrate/<name>.md` → `/substrate/<name>`) and both
 `doctrine-architect` and `bead-implementer` to OpenCode **agents** (`mode: subagent`). Install by symlink with
 `scripts/opencode-link.sh` (undo: `opencode-unlink.sh`) — the OpenCode mirror of the Claude Code

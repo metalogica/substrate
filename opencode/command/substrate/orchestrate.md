@@ -28,6 +28,11 @@ must originate here. The executing agent needs `permission.task: allow`.
   `docs/tasks/ongoing/<slug>/<slug>-spec.md` (its epic label is derived from the directory).
 - `--auto` — run all waves unattended (skip the between-wave approval pause). Default: **pause
   between waves**, mirroring `/substrate/execute`'s pause-between-phases ethos.
+- `--pr` — **cloud-output mode.** Push `feat/<epic-slug>` after every green wave re-gate (so an open
+  PR accumulates the per-bead commits live, wave by wave) and **suppress the Step 6.3 trunk-squash** —
+  the PR is the deliverable and GitHub's *Squash and merge* is the single squasher (it re-authors one
+  clean commit, absorbing the unsigned bead commits). For headless runners (`/substrate/dispatch`).
+  Orthogonal to `--auto`; mutually exclusive with the Step 6.3 trunk landing.
 
 ## When to run
 
@@ -146,7 +151,13 @@ Disabling signing is why epic-close **must** restore it unconditionally.
 - Normal green → `tbd close <id> --reason "gate green: <summary>"`.
 - **Out-of-band gate applies** → do **not** close: `tbd update <id> --notes "merged; awaiting <out-of-band> gate"` and leave open until a human runs the full gate.
 
-**5g. Pause for approval** with a wave summary — **unless `--auto`**.
+**5f-pr. Push the integration tip (only under `--pr`).** After the wave's union re-gate is green (5e),
+`git push origin feat/<epic-slug>` — this makes the PR update live in wave-sized bursts. On wave 1,
+ensure the PR exists (`gh pr view feat/<epic-slug> || gh pr create -f -H feat/<epic-slug>`). A red
+re-gate pushes nothing.
+
+**5g. Pause for approval** with a wave summary — **unless `--auto`**. Under `--pr --auto` there is no
+pause; the PR is the inspection surface.
 
 **5h. The terminal doctrine-reconciliation node (final wave).** The epic's last wave is always the solo `kind: doctrine-reconciliation` node graph-spec emitted (`blocked-by` every other bead, so it runs alone against the fully integrated tip). Dispatch it like any window, with two things to know:
 
@@ -157,7 +168,9 @@ Disabling signing is why epic-close **must** restore it unconditionally.
 
 1. **Finalize `.substrate/execution-state.json`** — the durable run-state, written **incrementally** (run-id + partition at start, a `re-gates[]` entry appended after every wave's union re-gate, each bead's `outcome` as it merges) and finalized before the squash. Under the `<epic>` key record: the `run-id`, the chosen `partition` (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons), the per-wave `re-gates` (`[{wave, commands, result, tip-sha}]` — the union-gate proof), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Incremental writes mean a crash or abort still leaves a truthful partial ledger. Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed with the squash.
 2. **One** `tbd sync` — orchestrator-only, at epic close. `auto_sync` stays off; never sync mid-flight from a worktree.
-3. Land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git merge --squash feat/<epic-slug>` + a signed commit. Squash keeps unsigned bead commits out of trunk history.
+3. **Land the epic — two modes:**
+   - **Default:** land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git merge --squash feat/<epic-slug>` + a signed commit. Squash keeps unsigned bead commits out of trunk history.
+   - **`--pr` mode:** do NOT touch trunk. Commit `.substrate/execution-state.json` onto `feat/<epic-slug>`, push it a final time, ensure the PR is open. GitHub's *Squash and merge* is the single squasher; the unsigned bead commits are legitimate on the PR branch and re-authored at merge.
 4. **Restore `commit.gpgsign true` unconditionally** — including on the abort / rollback path. Idempotent; never leave signing disabled past the run.
 
 ## Constraints
@@ -172,5 +185,6 @@ Disabling signing is why epic-close **must** restore it unconditionally.
 - MUST write tracked `.substrate/execution-state.json` **incrementally per wave** (partition + per-wave `re-gates[]` + per-bead outcomes + run-log pointer), finalized before the squash.
 - MUST disable signing for the run and **restore `commit.gpgsign true` unconditionally** (incl. abort). Land trunk as one signed **squash** commit.
 - MUST pause between waves unless `--auto`. Never silently fan out beyond the DAG.
+- MUST, under `--pr`, push `feat/<epic-slug>` after each green wave re-gate and **suppress the Step 6.3 trunk-squash** (mutually exclusive) — the PR squash-merged on GitHub is the sole landing; never create a trunk commit in `--pr` mode. Signing is restored unconditionally at close as in the default mode.
 - MUST dispatch the **group-runner** (`bead-implementer`) via the **Task tool**, one per window; if the runtime serializes, **fall back to sequential dispatch and log it** — correctness over wall-clock. Requires `permission.task: allow` on the executing agent.
 - SHOULD narrate each wave (dispatched beads, gate results, merges) so the user sees liveness on long epics.

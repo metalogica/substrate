@@ -1,0 +1,94 @@
+# substrate-orchestrate.yml — cloud dispatch seam (the PORT).
+#
+# Runs `/substrate:orchestrate <epic> --auto --pr` on a GitHub runner: fetches the graphed epic's
+# beads, reproduces the repo's declared gate environment, executes the bead DAG headless, and pushes
+# feat/<epic-slug> wave-by-wave so an open PR accumulates the per-bead commits live. GitHub's
+# "Squash and merge" is the single squasher (orchestrate --pr suppresses its own trunk-squash).
+#
+# This file is INSTALLED BY /substrate:adopt, which token-substitutes the {{...}} slots from
+# substrate.yaml's `ci:` block + `toolchain-pin` (GitHub `services:`/`runs-on:` are static job keys
+# and cannot be computed at runtime — see substrate.yaml `ci:` NOTE). Do not hand-edit the tokens;
+# re-run adopt or edit substrate.yaml and re-substitute. v1 trigger is manual (workflow_dispatch);
+# the event-driven trigger (on: push: [tbd-sync] + new-epic guard + run:<id> claim-lock) is the
+# documented v2 upgrade and changes ONLY the `on:` block below.
+name: substrate-orchestrate
+
+on:
+  workflow_dispatch:
+    inputs:
+      epic:
+        description: "epic slug (e.g. rnk-xyz1) or epic:<slug> label"
+        required: true
+
+# Double-fire guard: two dispatches of the SAME epic cannot run concurrently. (v1 relies on this +
+# manual triggering; v2's event-driven path adds a persisted run:<id> claim-lock on top.)
+concurrency:
+  group: substrate-orchestrate-${{ github.event.inputs.epic }}
+  cancel-in-progress: false
+
+# The runner pushes feat/<epic-slug> and opens the PR on the default GITHUB_TOKEN.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  orchestrate:
+    runs-on: {{CI_RUNNER}}                # ← ci.runner (default ubuntu-latest)
+
+    # {{CI_SERVICES}} — ci.services, substituted verbatim by adopt (omit the whole key if none).
+    services: {{CI_SERVICES}}
+
+    # {{CI_ENV}} — any env the gate needs (e.g. DATABASE_URL pointing at the service above).
+    env: {{CI_ENV}}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0               # full history: orchestrate cuts/merges the integration branch
+
+      # D1 — bead visibility. The epic's graphed beads live on the `tbd-sync` branch, not on the
+      # default branch's .tbd/ tree. Fetch it so tbd/bead-graph.sh can see the DAG.
+      - name: Fetch bead state
+        run: git fetch origin 'tbd-sync:tbd-sync' || echo "no tbd-sync branch yet"
+
+      # --- Toolchain + gate environment (mirrors the repo's own CI recipe) ---
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install toolchain
+        run: {{TOOLCHAIN_INSTALL}}       # ← substrate.yaml toolchain-pin.install
+
+      - name: Bootstrap gate environment
+        run: |
+          {{CI_BOOTSTRAP}}               # ← ci.bootstrap steps (db:init/migrate/seed, codegen, …)
+
+      # --- The agent (framework-agnostic; override AGENT_COMMAND to use a non-Claude runner) ---
+      - name: Install headless agent
+        run: |
+          npm i -g @anthropic-ai/claude-code
+          # substrate plugin availability in the container is validated by the Phase-1 proof spike;
+          # the resolved install method is recorded in dispatch-spec Phase 1 findings.
+
+      - name: Orchestrate epic (headless, PR-output)
+        run: {{AGENT_COMMAND}}
+        # Default AGENT_COMMAND (substituted by adopt / overridable):
+        #   claude -p "/substrate:orchestrate ${{ github.event.inputs.epic }} --auto --pr" \
+        #     --permission-mode bypassPermissions
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fallback: if orchestrate --pr didn't open the PR (e.g. it aborted mid-wave), ensure one
+      # exists over whatever landed so the run is never a silent no-op.
+      - name: Ensure PR exists
+        if: always()
+        run: |
+          slug="${{ github.event.inputs.epic }}"; slug="${slug#epic:}"
+          git ls-remote --exit-code --heads origin "feat/${slug}" >/dev/null 2>&1 || exit 0
+          gh pr view "feat/${slug}" >/dev/null 2>&1 || \
+            gh pr create -f -H "feat/${slug}" -t "epic: ${slug}" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

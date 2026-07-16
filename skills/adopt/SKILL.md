@@ -80,6 +80,13 @@ Ask (end each with `[type 'default' to let me decide sensible defaults]`):
    and propose a `worktree-seed[]` + `toolchain-pin` set, then confirm. This is what
    `/substrate:orchestrate` copies into each worktree before dispatch — declaring it now saves
    hand-seeding on every future fleet run (see `agents-parallel-execution-doctrine.md §Supporting`).
+7. **Cloud dispatch (optional)** — "Do you want `/substrate:dispatch <epic>` to run epics on a
+   GitHub runner (headless `orchestrate --auto --pr` → live PR)? If so, what **services** and
+   **bootstrap** steps does a fresh container need for your gate to pass, and which **secrets**?"
+   Default: **inspect `.github/workflows/*.yml`** — if the repo already runs its gate in CI (a
+   `services:` map + bootstrap steps), lift those into a `ci:` block verbatim and confirm; else ask.
+   Always include `ANTHROPIC_API_KEY` in `secrets-needed`. If the user declines, leave the commented
+   `ci:` stub in place (dispatch simply refuses until it's filled) — don't fabricate a `ci:` block.
 
 If the user picks `default` on the gate commands, inspect the repo's manifest files, propose
 concrete commands, and **confirm them** before writing — a wrong gate makes `/substrate:execute`
@@ -118,6 +125,21 @@ The template also ships an uncommented `execution:` block (a sibling of `gate` /
 `group:<window-N>` windows, and `/substrate:orchestrate` reads `default-rung`. The block is a
 deviatable prior, documented in `agents-parallel-execution-doctrine.md §Grouping & windows`
 (which also carries the `.substrate/execution-state.json` run-state schema).
+
+If the Step-3 **cloud-dispatch** answer opted in, write a **populated, uncommented** `ci:` block
+into `substrate.yaml` (replace the commented stub) from the detected/asked `services` + `bootstrap` +
+`secrets-needed`, and **token-substitute the copied `.github/workflows/substrate-orchestrate.yml`**:
+- `{{CI_RUNNER}}` → `ci.runner` (default `ubuntu-latest`)
+- `{{CI_SERVICES}}` → the `ci.services` YAML block (or delete the `services:` line if none)
+- `{{CI_ENV}}` → the gate env map (or `{}`)
+- `{{CI_BOOTSTRAP}}` → the `ci.bootstrap` steps joined as shell lines (or `true`)
+- `{{TOOLCHAIN_INSTALL}}` → `substrate.yaml` `toolchain-pin.install` (or `pnpm install --frozen-lockfile`)
+- `{{AGENT_COMMAND}}` → the default `claude -p "/substrate:orchestrate ${{ github.event.inputs.epic }} --auto --pr" --permission-mode bypassPermissions`, unless the user named another runner
+
+Because GitHub `services:`/`runs-on:` are static job keys, this substitution happens **now, at adopt
+time** — the workflow is not generic-at-runtime (see the `ci:` NOTE in `substrate.yaml`). If the user
+**declined** cloud dispatch, delete the copied `substrate-orchestrate.yml` (leave no token-valued
+workflow behind) — the repo can re-adopt or run `/substrate:dispatch` later to install it.
 
 Do **not** substitute anything inside `docs/doctrine/` or `docs/protocol/sdd/` — those ship verbatim.
 
@@ -159,6 +181,7 @@ Installed (stack untouched):
   AGENTS.md (+ CLAUDE.md symlink) · substrate.yaml gate · docs/doctrine/ (manifest + lint +
   agents & parallel-exec doctrines) · docs/protocol/sdd/ · docs/tasks/ongoing/ ·
   .hooks/pre-commit · .github/workflows/doctrine-lint.yml
+  [if cloud dispatch opted in] · .github/workflows/substrate-orchestrate.yml · substrate.yaml ci: block
 
 Gate 1 (mechanical): green.
 
@@ -168,6 +191,11 @@ Next:
   3. Write a brief, then:          /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md
      or a quick change:            /substrate:quick-spec "<objective>"
   4. Commit — the pre-commit hook re-runs doctrine-lint.
+
+  [if cloud dispatch opted in]
+  ⚠ Add these repo secrets before the first dispatch (adopt never writes secret values):
+       gh secret set ANTHROPIC_API_KEY        # + any other names in substrate.yaml ci.secrets-needed
+  Then run an epic in the cloud:   /substrate:dispatch <epic>
 
   (Optional) Set up tbd/beads:     npx get-tbd  → tbd setup --auto --prefix=<name>
 ```
@@ -184,6 +212,12 @@ Next:
   stub — declare a populated `worktree-seed[]`/`toolchain-pin` block when the repo's gate needs
   gitignored inputs, so `/substrate:orchestrate` auto-seeds instead of the orchestrator hand-seeding.
 - MUST leave `doctrine-lint.sh` **green** before printing the handoff. A red adopt is a failed adopt.
+- MUST, for cloud dispatch, either fully token-substitute `substrate-orchestrate.yml` + write a
+  populated `ci:` block, **or** delete the copied workflow — never leave a `{{TOKEN}}`-valued workflow
+  behind (a token-valued `runs-on:`/`services:` is an invalid, silently-failing workflow). `ci:` is
+  optional; a token-valued workflow is not.
+- MUST print `secrets-needed` **by name only** as a manual `gh secret set` instruction — adopt never
+  writes or prompts for secret values.
 - MUST keep `AGENTS.md` canonical with `CLAUDE.md` a symlink to it (macOS/Linux; Windows users work
   under WSL's Linux path).
 - MUST copy the bundle via `cp -R` from `references/docs-core/`, not by promoting from any external

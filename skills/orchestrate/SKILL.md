@@ -24,6 +24,14 @@ its rationale here.
   `docs/tasks/ongoing/<slug>/<slug>-spec.md` (its epic label is derived from the directory).
 - `--auto` — run all waves unattended (skip the between-wave approval pause). Default is
   **pause between waves**, mirroring `/substrate:execute`'s pause-between-phases ethos.
+- `--pr` — **cloud-output mode.** Instead of landing one squash commit on trunk (Step 6.3),
+  **push `feat/<epic-slug>` after every wave** (so an open PR accumulates the per-bead commits
+  live, wave by wave) and **suppress the trunk-squash entirely** — the PR is the deliverable and
+  GitHub's *Squash and merge* becomes the single squasher (it re-authors one clean commit, absorbing
+  the unsigned per-bead commits). Designed for a headless runner (see `/substrate:dispatch`); implies
+  no interactive trunk landing. Composes with `--auto` (the two are orthogonal: `--auto` skips the
+  pause, `--pr` changes the landing). MUST NOT be combined with the Step 6.3 trunk-squash — they are
+  mutually exclusive by construction.
 
 ## When to run
 
@@ -178,8 +186,15 @@ dependent dispatches.** A wave with no recorded re-gate entry is a protocol viol
   `tbd update <id> --notes "merged; awaiting <out-of-band> gate"` and leave it open. Merge already
   unblocked its dependents; close waits for the *full* gate a human runs later (doctrine §Policy-4).
 
+**5f-pr. Push the integration tip (only under `--pr`).** Immediately after the wave's union re-gate
+is green (5e), `git push origin feat/<epic-slug>`. This is what makes the PR update **live, in
+wave-sized bursts** — the per-bead commits merged this wave become visible on the PR the moment the
+integrated tip is authorized. On the first wave, ensure the PR exists (`gh pr view feat/<epic-slug>
+|| gh pr create -f -H feat/<epic-slug>`). A red re-gate pushes nothing (halt per 5e).
+
 **5g. Pause for approval** with a wave summary (beads merged / left-open / red, re-gate result,
-next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the user can inspect.
+next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the user can inspect. Under
+`--pr --auto` (the headless-runner combination) there is no pause; the PR is the inspection surface.
 
 **5h. The terminal doctrine-reconciliation node (final wave).** The epic's last wave is always the
 solo `kind: doctrine-reconciliation` node graph-spec emitted (`blocked-by` every other bead, so it
@@ -201,7 +216,9 @@ runs alone against the fully integrated tip). Dispatch it like any window, with 
 
 1. **Finalize `.substrate/execution-state.json`** — the durable run-state. This file is written **incrementally**, not once at the end: stamp the `run-id` + chosen `partition` at run start, append a `re-gates[]` entry after every wave's union re-gate (5e), and record each bead's `outcome` as it merges — so a crash or an aborted run still leaves a partial, truthful ledger (and the re-gate history that makes a composition failure diagnosable after the fact). At epic close, before the squash, finalize it: under the `<epic>` key record the `run-id`, the **chosen `partition`** (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons, mirroring the run-log), the per-wave `re-gates` (`[{wave, commands, result, tip-sha}]` — the union-gate proof), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed alongside the squash.
 2. **One** `tbd sync` — orchestrator-only, at epic close (or an explicitly agreed checkpoint). `auto_sync` stays off; never sync mid-flight from a worktree (doctrine §Policy-3 → *Batch sync*).
-3. Land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git switch <trunk>` → `git merge --squash feat/<epic-slug>` → `git commit -S -m "..."`. Squash keeps the unsigned bead commits out of trunk history.
+3. **Land the epic — two modes:**
+   - **Default (local landing):** land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git switch <trunk>` → `git merge --squash feat/<epic-slug>` → `git commit -S -m "..."`. Squash keeps the unsigned bead commits out of trunk history.
+   - **`--pr` mode (cloud landing):** do **NOT** touch trunk. Commit `.substrate/execution-state.json` onto `feat/<epic-slug>`, `git push origin feat/<epic-slug>` a final time, and ensure the PR is open (`gh pr view … || gh pr create -f`). The squash-to-trunk is deferred to GitHub's *Squash and merge* on the PR (the single squasher). The unsigned bead commits are legitimate on the PR branch; GitHub re-authors them into one commit at merge.
 4. **Restore `commit.gpgsign true` unconditionally** — including on the abort / rollback path. This restore is idempotent; never leave signing disabled past the run (doctrine §Supporting → *Unattended signing*; FMEA #1).
 
 ## CC Workflow fast-path (v1, optional at runtime)
@@ -223,6 +240,7 @@ on OpenCode. Do not hardwire Workflow as the sole mechanism.
 - MUST apply the **two-stage gate**: headless-green → merge + unblock dependents; out-of-band proof → leave open + noted until a human runs it.
 - MUST disable signing for the run and **restore `commit.gpgsign true` unconditionally** (incl. abort). Land trunk as one signed **squash** commit.
 - MUST pause between waves unless `--auto`. Never silently fan out beyond the DAG.
+- MUST, under `--pr`, push `feat/<epic-slug>` after each green wave re-gate and **suppress the Step 6.3 trunk-squash** — the two are mutually exclusive. The PR (squash-merged on GitHub) is the sole landing; the orchestrator MUST NOT create a trunk commit in `--pr` mode. Signing stays disabled during the run and is restored unconditionally at close exactly as in the default mode.
 - MUST stay **tool-agnostic** — Agent↔Task is the only seam. The CC Workflow fast-path is additive, not required.
 - MUST keep this body under ~500 lines — link to the doctrine for rationale, don't restate it.
 - SHOULD narrate each wave (dispatched beads, gate results, merges) so the user sees liveness on long epics.
