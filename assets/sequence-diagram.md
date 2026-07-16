@@ -209,10 +209,10 @@ sequenceDiagram
         User-->>SessionB: y / n / pause
     end
 
-    Note over SessionB: Mandatory final phase: Doctrine Review
+    Note over SessionB: Mandatory terminal phase: Doctrine Reconciliation
 
-    SessionB->>SessionB: doctrine compliance check
-    SessionB->>SessionB: write doctrine-amendments.md if needed
+    SessionB->>SessionB: reconcile doctrine vs integrated feature (ratify-only)
+    SessionB->>SessionB: apply earned change to docs/doctrine/** in-epic, re-gate
     SessionB->>SessionB: archive docs/tasks/ongoing/<feature> → completed/
     SessionB->>SessionB: git commit
     SessionB->>User: done (live in docs/tasks/completed/)
