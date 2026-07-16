@@ -11,6 +11,14 @@
 # re-run adopt or edit substrate.yaml and re-substitute. v1 trigger is manual (workflow_dispatch);
 # the event-driven trigger (on: push: [tbd-sync] + new-epic guard + run:<id> claim-lock) is the
 # documented v2 upgrade and changes ONLY the `on:` block below.
+#
+# AGENT PATH — {{AGENT_STEP}} is a DUAL seam (adopt substitutes the chosen variant, see below):
+#   • Claude official-action (RECOMMENDED, proven 2026-07-16 — dispatch-spec Phase-1 findings):
+#     anthropics/claude-code-action@v1 auto-installs the CLI AND the substrate plugin via its
+#     plugin_marketplaces/plugins inputs; auth via subscription OAuth (CLAUDE_CODE_OAUTH_TOKEN).
+#     REQUIRES `id-token: write` (below) — the action mints its GitHub token via OIDC.
+#   • raw-CLI (framework-agnostic default; plugin-install still UNPROVEN — see findings): a bare
+#     `claude -p` (or any non-Claude runner) via {{AGENT_COMMAND}} + ANTHROPIC_API_KEY.
 name: substrate-orchestrate
 
 on:
@@ -30,6 +38,9 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write        # REQUIRED by the Claude official-action agent variant (OIDC token mint);
+                         # harmless/unused for the raw-CLI variant. Removing it breaks the action with
+                         # "Could not fetch an OIDC token" (Phase-1 finding).
 
 jobs:
   orchestrate:
@@ -46,10 +57,16 @@ jobs:
         with:
           fetch-depth: 0               # full history: orchestrate cuts/merges the integration branch
 
-      # D1 — bead visibility. The epic's graphed beads live on the `tbd-sync` branch, not on the
-      # default branch's .tbd/ tree. Fetch it so tbd/bead-graph.sh can see the DAG.
-      - name: Fetch bead state
-        run: git fetch origin 'tbd-sync:tbd-sync' || echo "no tbd-sync branch yet"
+      # D1 — bead visibility (Phase-1 finding). The epic's graphed beads live in the local .tbd store
+      # (gitignored: only .tbd/config.yml is tracked) synced to the `tbd-sync` branch. A bare
+      # `git fetch tbd-sync` makes a branch REF only — it does NOT hydrate the store, and
+      # bead-graph.sh (which orchestrate reads the DAG from) needs BOTH the `tbd` CLI AND a hydrated
+      # store, else it aborts "no DAG". So: install tbd, then `tbd sync --pull` (pull-only — an empty
+      # runner store must never PUSH-wipe tbd-sync).
+      - name: Install tbd + hydrate bead state
+        run: |
+          npm i -g get-tbd
+          tbd sync --pull --issues || echo "no tbd-sync beads to pull yet"
 
       # --- Toolchain + gate environment (mirrors the repo's own CI recipe) ---
       - uses: pnpm/action-setup@v4
@@ -60,26 +77,38 @@ jobs:
 
       - name: Install toolchain
         run: {{TOOLCHAIN_INSTALL}}       # ← substrate.yaml toolchain-pin.install
+                                         # NOTE: use the package-manager prefix for workspace-bin tools
+                                         # (`pnpm turbo`, not bare `turbo`) — the bin isn't on PATH
+                                         # (exit-127 Phase-1 finding).
 
       - name: Bootstrap gate environment
         run: |
           {{CI_BOOTSTRAP}}               # ← ci.bootstrap steps (db:init/migrate/seed, codegen, …)
 
-      # --- The agent (framework-agnostic; override AGENT_COMMAND to use a non-Claude runner) ---
-      - name: Install headless agent
-        run: |
-          npm i -g @anthropic-ai/claude-code
-          # substrate plugin availability in the container is validated by the Phase-1 proof spike;
-          # the resolved install method is recorded in dispatch-spec Phase 1 findings.
-
-      - name: Orchestrate epic (headless, PR-output)
-        run: {{AGENT_COMMAND}}
-        # Default AGENT_COMMAND (substituted by adopt / overridable):
-        #   claude -p "/substrate:orchestrate ${{ github.event.inputs.epic }} --auto --pr" \
-        #     --permission-mode bypassPermissions
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # --- The agent — {{AGENT_STEP}}, substituted by adopt with ONE of the two variants below. ---
+      # VARIANT A — Claude official-action (RECOMMENDED, proven). adopt writes:
+      #   - name: Orchestrate epic (headless, PR-output)
+      #     uses: anthropics/claude-code-action@v1
+      #     with:
+      #       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}   # subscription OAuth
+      #       plugin_marketplaces: |
+      #         {{PLUGIN_MARKETPLACE_URL}}          # MUST be https://…/substrate.git (regex-validated)
+      #       plugins: |
+      #         substrate@{{MARKETPLACE_NAME}}      # e.g. substrate@metalogica
+      #       prompt: "/substrate:orchestrate ${{ github.event.inputs.epic }} --auto --pr"
+      #       claude_args: "--permission-mode bypassPermissions"
+      #
+      # VARIANT B — raw-CLI (framework-agnostic; plugin-install UNPROVEN). adopt writes:
+      #   - name: Install headless agent
+      #     run: npm i -g @anthropic-ai/claude-code   # + your resolved substrate plugin-install method
+      #   - name: Orchestrate epic (headless, PR-output)
+      #     run: {{AGENT_COMMAND}}                    # default: claude -p "/substrate:orchestrate
+      #                                               #   ${{ github.event.inputs.epic }} --auto --pr"
+      #                                               #   --permission-mode bypassPermissions
+      #     env:
+      #       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      #       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      {{AGENT_STEP}}
 
       # Fallback: if orchestrate --pr didn't open the PR (e.g. it aborted mid-wave), ensure one
       # exists over whatever landed so the run is never a silent no-op.

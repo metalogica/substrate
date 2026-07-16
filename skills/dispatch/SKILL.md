@@ -25,7 +25,7 @@ Offload a **graphed epic** to a GitHub runner. The runner executes the bead DAG 
 | No `ci:` block in `substrate.yaml` (repo not cloud-dispatch-enabled) | Run `/substrate:adopt` and opt into cloud dispatch (installs `ci:` + `substrate-orchestrate.yml`). |
 | No `.github/workflows/substrate-orchestrate.yml` | Same — re-adopt with cloud dispatch, or the workflow was deleted. |
 | Epic is not graphed (`bead-graph.sh --epic <slug>` empty) | Graph it first: `/substrate:graph-spec <spec>`. dispatch runs a DAG; it does not create one. |
-| `ANTHROPIC_API_KEY` (or a name in `ci.secrets-needed`) not set as a repo secret | Add it: `gh secret set ANTHROPIC_API_KEY`. The runner can't authenticate without it. |
+| A secret named in `ci.secrets-needed` not set as a repo secret (`CLAUDE_CODE_OAUTH_TOKEN` for the `claude-action` path, `ANTHROPIC_API_KEY` for `raw-cli`) | Add it: `gh secret set <NAME>`. The runner can't authenticate without it. |
 
 Abort with the specific reason (fail-fast) — do not silently fall back to a local `orchestrate`.
 
@@ -49,7 +49,9 @@ Confirm, in order, and abort with the matching REFUSE row on the first failure:
 git remote get-url origin                                   # remote exists
 grep -q '^ci:' substrate.yaml                               # cloud-dispatch-enabled
 test -f .github/workflows/substrate-orchestrate.yml         # workflow installed
-gh secret list 2>/dev/null | grep -q ANTHROPIC_API_KEY      # key present (best-effort)
+# auth secret present (best-effort) — check every name in ci.secrets-needed:
+for s in $(grep -A20 '^ci:' substrate.yaml | sed -n 's/.*- "\(.*\)".*/\1/p'); do \
+  gh secret list 2>/dev/null | grep -q "$s" || echo "missing secret: $s"; done
 ```
 
 The secret check is best-effort (private-repo permissions may hide it) — if `gh` can't list, warn rather than block, and remind the user the run will fail without it.

@@ -24,7 +24,7 @@ Offload a **graphed epic** to a GitHub runner. The runner executes the bead DAG 
 | No `ci:` block in `substrate.yaml` | Run `/substrate/adopt` and opt into cloud dispatch. |
 | No `.github/workflows/substrate-orchestrate.yml` | Re-adopt with cloud dispatch, or the workflow was deleted. |
 | Epic not graphed (`bead-graph.sh --epic <slug>` empty) | Graph it first: `/substrate/graph-spec <spec>`. |
-| `ANTHROPIC_API_KEY` (or a `ci.secrets-needed` name) not a repo secret | `gh secret set ANTHROPIC_API_KEY`. |
+| A `ci.secrets-needed` name not a repo secret (`CLAUDE_CODE_OAUTH_TOKEN` for `claude-action`, `ANTHROPIC_API_KEY` for `raw-cli`) | `gh secret set <NAME>`. |
 
 Abort with the specific reason (fail-fast) — never silently fall back to a local `orchestrate`.
 
@@ -40,7 +40,7 @@ Normalize (`epic:<slug>` → `<slug>`). `bash docs/scripts/bead-graph.sh --epic 
 git remote get-url origin
 grep -q '^ci:' substrate.yaml
 test -f .github/workflows/substrate-orchestrate.yml
-gh secret list 2>/dev/null | grep -q ANTHROPIC_API_KEY   # best-effort; warn (don't block) if gh can't list
+for s in $(grep -A20 '^ci:' substrate.yaml | sed -n 's/.*- "\(.*\)".*/\1/p'); do gh secret list 2>/dev/null | grep -q "$s" || echo "missing: $s"; done   # best-effort; warn (don't block)
 ```
 
 Abort on the first failure with the matching REFUSE row.

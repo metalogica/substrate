@@ -37,7 +37,7 @@ The v1 trigger is **manual** (`workflow_dispatch`); the event-driven trigger (a 
 
 | # | Fork | Decision (v1) | Rationale |
 |---|---|---|---|
-| D1 | How does the runner see the epic's beads? | **fetch-tbd-sync**: local `tbd sync` publishes to the `tbd-sync` branch; runner `git fetch origin tbd-sync`. | Reuses existing graphed epics; matches the "graph locally, execute in cloud" model. `.tbd/**` on main carries no bead data (verified: 3 config files only). Alt (graph-in-cloud) deferred. |
+| D1 | How does the runner see the epic's beads? | **hydrate-tbd-sync**: local `tbd sync` publishes to the `tbd-sync` branch; runner installs `get-tbd` and runs **`tbd sync --pull`** to hydrate its local store. | Reuses existing graphed epics; matches "graph locally, execute in cloud". `.tbd/**` on main carries no bead data (verified: 3 config files only). **Phase-1 correction:** a bare `git fetch tbd-sync` is INSUFFICIENT — it makes a branch ref only, does not hydrate the (gitignored) store that `bead-graph.sh` reads, and the template never installed `tbd` at all → orchestrate found no DAG and aborted. Pull-only avoids an empty runner store wiping `tbd-sync`. |
 | D2 | Who squashes to trunk? | **GitHub "Squash and merge"** button; `orchestrate --pr` **suppresses** its own trunk-squash. | One squasher. GitHub re-authors a single clean commit, absorbing the unsigned per-bead commits — no unsigned commits reach a protected branch. |
 | D3 | v1 trigger | **`workflow_dispatch`** (manual). Event-driven (`on: push: [tbd-sync]` + new-epic guard + `run:<id>` claim-lock) **deferred to Phase 7 (v2)**. | Deletes the entire double-execution / feedback-loop / claim-lock problem class. Strict prefix — v2 changes only the `on:` block. |
 | D4 | Seam packaging | v1 = **copied workflow template** dropped by adopt with token substitution (matches adopt's `cp -R` + `sed`). v2 = extract to a versioned substrate-owned **composite action**. | MVP simplicity; don't build a versioned action before one green run. Phase 1 output informs the extraction. |
@@ -173,7 +173,7 @@ jobs:
 
 | Error | Cause | Handling |
 |-------|-------|----------|
-| Epic invisible in runner | `tbd sync` not run before dispatch, or `tbd-sync` not fetched | dispatch runs `tbd sync` itself; workflow `git fetch origin tbd-sync` explicit; abort with "publish first" if branch absent |
+| Epic invisible in runner | `tbd sync` not run before dispatch; OR (Phase-1 finding) runner lacks `tbd` + never hydrates the store — a `git fetch` ref alone doesn't populate it | dispatch runs `tbd sync` itself; workflow installs `get-tbd` + runs `tbd sync --pull` (pull-only); abort with "publish first" if branch absent |
 | Headless agent can't install plugin | plugin cache/marketplace not available in container | Phase 1 spike resolves the install method; fail the run with the install log, don't half-run |
 | Permission prompt blocks the agent | worktree/git ops need interactive approval | `--permission-mode bypassPermissions` in the default `agent-command` (D6) |
 | Gate red on unseeded input | `worktree-seed` secrets (`.env.local`/`.env.prod`) absent in container | provide as secrets OR confirm gate green without them (ci.yml passes on `DATABASE_URL` alone); orchestrate already warns |
@@ -199,8 +199,8 @@ This is the substrate **plugin** repo — skills are natural-language contracts,
 
 | # | Failure Mode | Severity | Mitigation |
 |---|--------------|----------|------------|
-| 1 | Headless CC + substrate plugin won't install/run in the container | **Critical** | Phase 1 is a dedicated spike that answers exactly this before any generalization is built |
-| 2 | Beads not visible → orchestrate refuses (ungraphed) | High | D1 fetch-tbd-sync + dispatch's own `tbd sync` publish; dispatch refuses ungraphed epics up front |
+| 1 | Headless CC + substrate plugin won't install/run in the container | **Critical** → **RESOLVED** | Phase-1 finding: `claude-code-action@v1` `plugin_marketplaces`/`plugins` installs the plugin cleanly (proven). raw-`claude -p` plugin-install remains unproven; the dual template defaults to the proven `claude-action` path. |
+| 2 | Beads not visible → orchestrate refuses (ungraphed) | High → **RESOLVED (fix landed)** | Phase-1 finding: fetch-ref alone didn't hydrate + `tbd` wasn't installed → template now installs `get-tbd` + `tbd sync --pull`. dispatch also refuses ungraphed epics up front. |
 | 3 | Feedback loop / double execution (v2) | High | v1 is manual (no trigger to loop); v2 Phase 7 ships guard + claim-lock + `concurrency` |
 | 4 | Unsigned per-bead commits reach protected branch | Medium | D2: GitHub squash-merge re-authors one commit; branch protection requires squash-merge |
 | 5 | `services:` can't be made runtime-generic | Medium | Known GitHub constraint; v1 token-substitutes at adopt time (D4) rather than pretending it's dynamic |
@@ -385,3 +385,4 @@ gh run list --workflow substrate-orchestrate.yml --json displayTitle,status \
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2026-07-15 | Initial spec. v1 = manual `workflow_dispatch` cloud orchestration via port/adapter (adopt-installed seam + `ci:` block + `orchestrate --pr` + `/substrate:dispatch`); event-driven trigger deferred to Phase 7. Phase 1 is a proof spike whose findings ratify D4. |
+| 1.1.0 | 2026-07-16 | Phase-1 live run performed (clawcraft, run 29519162288). **Auth + substrate plugin-load proven** via official `claude-code-action@v1` + subscription OAuth. Findings recorded in `phase1-findings.md`. Template made **dual-path** (`{{AGENT_STEP}}`: proven `claude-action` default + framework-agnostic `raw-cli`), added `id-token: write`, and **fixed the bead-visibility gap** (install `get-tbd` + `tbd sync --pull`; a bare `git fetch tbd-sync` never hydrated the store) — D1 corrected, FMEA #1/#2 resolved. SC1 remains PARTIAL until the fixed template lands a live PR. adopt/dispatch skills + opencode mirrors updated. |

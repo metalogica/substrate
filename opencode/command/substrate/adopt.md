@@ -77,7 +77,10 @@ Ask (end each with `[type 'default' to let me decide sensible defaults]`):
    runner (headless `orchestrate --auto --pr` → live PR)? If so, what **services**/**bootstrap** does
    a fresh container need, and which **secrets**?" Default: inspect `.github/workflows/*.yml`; if the
    repo already runs its gate in CI, lift the `services:`/bootstrap into a `ci:` block and confirm;
-   else ask. Always include `ANTHROPIC_API_KEY`. If declined, leave the commented `ci:` stub (dispatch
+   else ask. Also ask the **agent path** (`ci.agent`, default `claude-action`): `claude-action`
+   (RECOMMENDED, proven — official `claude-code-action@v1`, auto plugin-install, `secrets-needed` ←
+   `CLAUDE_CODE_OAUTH_TOKEN`) or `raw-cli` (framework-agnostic, plugin-install unproven,
+   `secrets-needed` ← `ANTHROPIC_API_KEY`). If declined, leave the commented `ci:` stub (dispatch
    refuses until filled) — don't fabricate one.
 
 If the user picks `default` on the gate commands, inspect the repo's manifest files, propose
@@ -120,9 +123,14 @@ carries the `.substrate/execution-state.json` run-state schema).
 If the Step-3 **cloud-dispatch** answer opted in, write a populated `ci:` block into `substrate.yaml`
 and token-substitute the copied `.github/workflows/substrate-orchestrate.yml`: `{{CI_RUNNER}}` →
 `ci.runner`, `{{CI_SERVICES}}` → the `services:` block (or drop the key), `{{CI_ENV}}` → gate env,
-`{{CI_BOOTSTRAP}}` → `ci.bootstrap` lines, `{{TOOLCHAIN_INSTALL}}` → `toolchain-pin.install`,
-`{{AGENT_COMMAND}}` → the default `claude -p "/substrate:orchestrate ${{ github.event.inputs.epic }}
---auto --pr" --permission-mode bypassPermissions`. GitHub `services:`/`runs-on:` are static, so this
+`{{CI_BOOTSTRAP}}` → `ci.bootstrap` lines, `{{TOOLCHAIN_INSTALL}}` → `toolchain-pin.install`
+(prefix workspace bins: `pnpm turbo`, not bare `turbo` — exit-127 finding),
+`{{AGENT_STEP}}` → the agent step(s) for the `ci.agent` path: `claude-action` writes the
+`anthropics/claude-code-action@v1` block (OAuth + `plugin_marketplaces` `…/substrate.git` + keep
+`id-token: write`); `raw-cli` writes the `npm i -g @anthropic-ai/claude-code` install +
+`run: {{AGENT_COMMAND}}` (default `claude -p "/substrate:orchestrate ${{ github.event.inputs.epic }}
+--auto --pr" --permission-mode bypassPermissions`). The `get-tbd` install + `tbd sync --pull`
+bead-hydration step and `id-token: write` are static (not substituted). GitHub `services:`/`runs-on:` are static, so this
 is an adopt-time substitution, not runtime-generic. If declined, **delete** the copied workflow —
 never leave a token-valued workflow behind.
 
@@ -178,8 +186,9 @@ Next:
   4. Commit — the pre-commit hook re-runs doctrine-lint.
 
   [if cloud dispatch opted in]
-  ⚠ Add repo secrets before first dispatch (adopt never writes values):
-       gh secret set ANTHROPIC_API_KEY    # + any other names in substrate.yaml ci.secrets-needed
+  ⚠ Add the repo secret(s) named in substrate.yaml ci.secrets-needed (adopt never writes values):
+       # claude-action:  gh secret set CLAUDE_CODE_OAUTH_TOKEN   (run `claude setup-token` first)
+       # raw-cli:        gh secret set ANTHROPIC_API_KEY
   Then:                            /substrate/dispatch <epic>
 
   (Optional) Set up tbd/beads:     npx get-tbd  → tbd setup --auto --prefix=<name>
