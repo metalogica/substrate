@@ -47,7 +47,7 @@ docs/protocol/sdd/              # SDD protocol (Normative)
     └── spec-template.md
 
 docs/tasks/                     # Feature work
-├── ongoing/<feature>/          # Active: brief + spec + amendments
+├── ongoing/<feature>/          # Active: brief + spec (doctrine changes land in-epic, not queued here)
 │   ├── <feature>-brief.md
 │   └── <feature>-spec.md
 └── completed/<feature>/        # Archived after execution

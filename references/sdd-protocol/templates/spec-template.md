@@ -126,79 +126,44 @@ Tools to NOT use: <Edit if file doesn't exist>
 
 ...
 
-### Phase N: Doctrine Review
+### Phase N: Doctrine Reconciliation
 
 <!--
-This phase is MANDATORY. It ensures learnings from implementation
-feed back into the doctrine system (living documentation).
+This phase is MANDATORY and TERMINAL. It runs against the fully integrated
+feature and APPLIES the doctrine change the implementation earned — it does
+not detect-and-punt. There is no amendment queue. The doctrine mutation lands
+inside this epic's own diff, so feature + doctrine evolution are one
+co-revertable unit and the change can never silently evaporate.
 -->
 
-#### Step N.1: Review Implementation Against Doctrines
+This phase sees the **fully integrated feature** (every prior phase landed) and reconciles the doctrine tree with what the code actually did. It **applies** the change directly to `docs/doctrine/**` — no `doctrine-amendments.md`, no `type: doctrine-amendment` beads, no handoff to `/substrate:synthesize-session`.
 
-Review all code written in this spec against the doctrines that were loaded.
+#### Step N.1: Reconcile Doctrine Against the Integrated Feature (ratify-only)
 
-Check the doctrine manifest at `docs/doctrine/doctrine-manifest.yaml` to identify which doctrines applied to this spec based on trigger keywords.
+Check the doctrine manifest at `docs/doctrine/doctrine-manifest.yaml` to identify which doctrines applied to this spec based on trigger keywords. Read the full integrated diff (this feature's tip vs. its integration base) and, for each relevant doctrine, decide what the *landed* code obliges the doctrine to say:
 
-For each relevant doctrine, answer these questions:
+1. **New Patterns the code demonstrates** → promote to doctrine (Recommended Practice / Example).
+2. **Outdated rules the code superseded** → relax or correct them to match.
+3. **Missing coverage the code exemplifies** → add the scenario.
 
-1. **Compliance**: Did we follow all MUST/MUST NOT rules?
-   - If NO: Document the violation and why it was necessary
+Then **edit the doctrine file(s) directly** to codify those. This is an ordinary working-tree change to `docs/doctrine/**` — a group-runner MAY make it in its worktree (see below); it is **not** a tracker write.
 
-2. **New Patterns**: Did we discover patterns that should become doctrine?
-   - If YES: Document the pattern with rationale
+**`ratify-only` — the binding rule for this terminal node.** The mutation may only **codify what this epic already did**: relax an outdated rule, promote a pattern the landed code demonstrates, add coverage the code exemplifies. It may **never** introduce a MUST / MUST-NOT that the just-landed code violates. Consequence: re-gating the integrated tip against the *mutated* doctrine is deterministically green. If reconciliation would require a **stricter** rule that invalidates shipped code, it is **out of scope for this node** — do not apply it here; leave it as follow-up for `/substrate:synthesize-session` (which owns new-axis / stricter-rule work). A red re-gate means the mutation was not ratify-only: revert it and defer.
 
-3. **Outdated Rules**: Did we find doctrine that is wrong or outdated?
-   - If YES: Document what's wrong and the correction
+If no doctrine change is earned, this step passes automatically (no-op) — most specs will change nothing.
 
-4. **Missing Coverage**: Did we encounter scenarios doctrine doesn't address?
-   - If YES: Document the gap
-
-If ANY amendments are needed, capture them in this standard shape:
-
-```markdown
-# Doctrine Amendments: <Feature>
-
-## Compliance Violations
-- [doctrine]: [rule violated] - [justification]
-
-## New Patterns to Add
-- [doctrine]: [pattern] - [rationale]
-
-## Outdated Rules to Update
-- [doctrine]: [current rule] → [proposed update]
-
-## Missing Coverage
-- [doctrine]: [scenario not covered]
-```
-
-If no amendments are needed, this step passes automatically.
-
-**Where the amendments go is tracker-dependent** — resolve the bead-tracker exactly as `/substrate:synthesize-session` does (honor `.substrate/config.json`'s `"bead-tracker"` if set; else auto-detect `tbd` when `.tbd/config.yml` exists AND a `tbd` binary is callable — `command -v tbd` OR `npx --no-install get-tbd --version` — else `none`):
-
-- **`bead-tracker: none`** — the `.md` is the queue. Write the amendments to `docs/tasks/ongoing/<feature>/doctrine-amendments.md`. This is canonical.
-- **`bead-tracker: tbd`** — **do NOT write any markdown under `docs/tasks/ongoing/**`** (the working tree is not a source of truth in a tbd repo), and **do NOT call `tbd` from inside this phase**. When this phase runs under `/substrate:orchestrate` it is a bead executed by a group-runner, which is forbidden from touching the tracker (single-writer stays with the orchestrator). Instead, **emit the amendment findings in this phase's completion report** and defer the actual queuing to `/substrate:synthesize-session` Step 5 — the depth-0, single-writer, tracker-aware sink that renders each amendment to an ephemeral tempfile → `tbd create --type doctrine-amendment` (`status: queued`) → unlink. This keeps amendments off the working tree and out of the group-runner's hands while preserving them for human triage.
+**Single-writer invariant is preserved.** Under `/substrate:orchestrate` this phase is the epic's terminal graphed bead (`blocked-by` every other bead), run by a group-runner in its own worktree. The group-runner **edits `docs/doctrine/**` files** (ordinary code) but MUST NOT touch `tbd` or `git push` — the orchestrator stays the sole tracker/remote writer and merges + re-gates the node like any other. Under `/substrate:execute` (depth-0, attended) the executor applies the same mutation directly as its final step. The behavior is identical regardless of `bead-tracker` — the doctrine files are canonical either way; there is no tracker-dependent queue.
 
 ##### Verify
 
-- `bead-tracker: none` → `test -f docs/tasks/ongoing/<feature>/doctrine-amendments.md && echo "Amendments documented" || echo "No amendments needed"`
-- `bead-tracker: tbd` → `echo "Doctrine review complete — amendments (if any) reported for /substrate:synthesize-session to queue as type=doctrine-amendment beads"`
-
-#### Step N.2: Route Doctrine Amendments for Human Review (if any)
-
-Only relevant when `bead-tracker: none`. If `docs/tasks/ongoing/<feature>/doctrine-amendments.md` exists, promote it to the shared review queue so it survives spec archival:
+- Re-run the epic's gate on the integrated tip **after** the doctrine edit:
 
 ```bash
-mkdir -p docs/tasks/ongoing/doctrine-updates
-cp docs/tasks/ongoing/<feature>/doctrine-amendments.md \
-   docs/tasks/ongoing/doctrine-updates/<feature>-amendments.md
+pnpm app:compile && pnpm app:lint && pnpm app:test
 ```
 
-Under `bead-tracker: tbd` this step is a **no-op** — the amendments are queued as `type: doctrine-amendment` beads by `/substrate:synthesize-session`, not as files. Do not create `docs/tasks/ongoing/doctrine-updates/` in a tbd repo.
-
-##### Verify
-
-- `bead-tracker: none` → `ls docs/tasks/ongoing/doctrine-updates/ 2>/dev/null || echo "No doctrine updates pending"`
-- `bead-tracker: tbd` → `echo "Amendments deferred to synthesize-session (tbd is canonical — no working-tree files)"`
+  Green ⟹ the mutation was ratify-only and lands with the feature. Red ⟹ not ratify-only; revert the doctrine edit and defer to `/substrate:synthesize-session`.
+- `git diff --name-only <integration-base>..HEAD -- docs/doctrine/ | grep -q . && echo "Doctrine reconciled in-epic" || echo "No doctrine change earned"`
 
 ---
 

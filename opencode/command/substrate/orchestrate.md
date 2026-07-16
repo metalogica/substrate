@@ -148,6 +148,11 @@ Disabling signing is why epic-close **must** restore it unconditionally.
 
 **5g. Pause for approval** with a wave summary — **unless `--auto`**.
 
+**5h. The terminal doctrine-reconciliation node (final wave).** The epic's last wave is always the solo `kind: doctrine-reconciliation` node graph-spec emitted (`blocked-by` every other bead, so it runs alone against the fully integrated tip). Dispatch it like any window, with two things to know:
+
+- Its group-runner **edits `docs/doctrine/**` in its worktree** to codify the ratify-only doctrine change the epic earned. That is an **ordinary working-tree change**, not a tracker write — the single-writer invariant is untouched (the runner still runs **no `tbd`, no `git push`**; you merge and record as always). Doctrine files land inside this epic's diff, co-revertable with the feature.
+- **Ratify-only is enforced by the re-gate, not a bespoke lint.** Its gate is the full union gate on the integrated tip (5e); since the mutation may only codify what the code already did, a green re-gate *is* the proof it was ratify-only. **A red re-gate means the doctrine edit introduced a rule the shipped code violates** — out of scope for this node: have the runner revert the doctrine edit (or do it yourself before merge) and note it as follow-up for `/substrate/synthesize-session`. There is **no** amendment queue to fall back on.
+
 ### Step 6. Epic close
 
 1. **Finalize `.substrate/execution-state.json`** — the durable run-state, written **incrementally** (run-id + partition at start, a `re-gates[]` entry appended after every wave's union re-gate, each bead's `outcome` as it merges) and finalized before the squash. Under the `<epic>` key record: the `run-id`, the chosen `partition` (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons), the per-wave `re-gates` (`[{wave, commands, result, tip-sha}]` — the union-gate proof), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Incremental writes mean a crash or abort still leaves a truthful partial ledger. Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed with the squash.

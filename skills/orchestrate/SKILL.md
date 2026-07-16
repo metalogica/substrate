@@ -181,6 +181,22 @@ dependent dispatches.** A wave with no recorded re-gate entry is a protocol viol
 **5g. Pause for approval** with a wave summary (beads merged / left-open / red, re-gate result,
 next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the user can inspect.
 
+**5h. The terminal doctrine-reconciliation node (final wave).** The epic's last wave is always the
+solo `kind: doctrine-reconciliation` node graph-spec emitted (`blocked-by` every other bead, so it
+runs alone against the fully integrated tip). Dispatch it like any window, with two things to know:
+
+- Its group-runner **edits `docs/doctrine/**` in its worktree** to codify the ratify-only doctrine
+  change the epic earned. That is an **ordinary working-tree change**, not a tracker write — the
+  single-writer invariant is untouched (the runner still runs **no `tbd`, no `git push`**; you merge
+  and record as always). Doctrine files land inside this epic's diff, co-revertable with the feature.
+- **Ratify-only is enforced by the re-gate, not a bespoke lint.** Its gate is the full union gate on
+  the integrated tip (5e); since the mutation may only codify what the code already did, a green
+  re-gate *is* the proof it was ratify-only. **A red re-gate means the doctrine edit introduced a
+  rule the shipped code violates** — that is out of scope for this node: have the runner revert the
+  doctrine edit (or do it yourself before merge) and note it as follow-up for
+  `/substrate:synthesize-session`. There is **no** amendment queue to fall back on — the node either
+  applies a green ratify-only change or reverts to a no-op.
+
 ### Step 6. Epic close
 
 1. **Finalize `.substrate/execution-state.json`** — the durable run-state. This file is written **incrementally**, not once at the end: stamp the `run-id` + chosen `partition` at run start, append a `re-gates[]` entry after every wave's union re-gate (5e), and record each bead's `outcome` as it merges — so a crash or an aborted run still leaves a partial, truthful ledger (and the re-gate history that makes a composition failure diagnosable after the fact). At epic close, before the squash, finalize it: under the `<epic>` key record the `run-id`, the **chosen `partition`** (window → bead-ids), any `deviations` from graph-spec's suggestion (with reasons, mirroring the run-log), the per-wave `re-gates` (`[{wave, commands, result, tip-sha}]` — the union-gate proof), the per-bead `outcomes` (`status: pass|fail|open` + merged `commit` sha or null), and the `run-log` pointer (`.substrate/runs/<epic>/<run-id>/`). Schema in `agents-parallel-execution-doctrine.md §Grouping & windows`. This file stays **tracked** (only `.substrate/runs/` is gitignored) and is committed alongside the squash.

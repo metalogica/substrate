@@ -104,6 +104,18 @@ absent — a deviatable prior, not a hard gate). Then:
 The partition is a **deviatable prior**: the orchestrator MAY re-batch at dispatch time (logging
 the deviation). See `agents-parallel-execution-doctrine.md §Grouping & windows`.
 
+### Step 4.6 — Force the terminal doctrine-reconciliation node
+
+Every spec ends with `Phase N: Doctrine Reconciliation` (per `spec-template.md`). Its bead is **not** an ordinary node — it is the epic's mandatory **terminal** node that applies the ratify-only doctrine change the feature earned, in-epic. It never queues a `doctrine-amendment` and there is no downstream sink. Shape it explicitly, overriding the generic decomposition:
+
+1. **Tag it** `kind: doctrine-reconciliation` (an additive tag alongside `epic:<slug>`), so the orchestrator can identify the terminal node.
+2. **Edge it `blocked-by` every other bead in the epic.** It must see the *fully integrated* feature — no other bead may land after it. This is deliberately the one node that collapses parallelism at the end; that's correct.
+3. **Write-scope = `docs/doctrine/**`.** Put `docs/doctrine/**` in its `creates`/Files. Editing doctrine files is ordinary working-tree change a group-runner may make in its worktree — it is **not** a tracker write, so the single-writer invariant is untouched.
+4. **Solo terminal window.** Give it its own `group:<window-N>` as the last window (it is `blocked-by` everything, so it is structurally its own final wave regardless). Never fold it into a feature window.
+5. **Ratify-only gate.** Its gate is the epic's full union gate re-run on the integrated tip — green proves the mutation only codified what the code already did. Do **not** tag it `gate-scope: partial`.
+
+If the spec somehow lacks a Doctrine Reconciliation phase, **synthesize this node anyway** — it is mandatory per the contract; warn that the spec was missing it.
+
 ### Step 5 — Persist the epic + beads
 
 Preview the full bead list in DAG order inline, then ask: `Create 1 epic + N beads under epic:<slug> now? (Y / n / select)` — default `Y` (binary gate, no default-escape suffix). `select` enters a per-bead `y / n / skip` loop.
@@ -113,7 +125,7 @@ Preview the full bead list in DAG order inline, then ask: `Create 1 epic + N bea
 1. **Epic bead:** `tbd create "Epic: <spec title>" --type epic -l "epic:<slug>" --file <spec-ref>` (a tempfile holding the spec path + one-line summary; `mktemp`, unlink after). Capture its id as `<epic-id>`.
 2. **Child beads,** in DAG order so `blocked-by:` resolves to already-assigned ids:
    - render the bead body (acceptance criterion + inlined gate + state-transfer prompt) to a tempfile,
-   - `tbd create "<title>" --type task --parent <epic-id> -l "epic:<slug>" -l "group:<window-N>" --file <tmp>`, where `<window-N>` is the bead's window from Step 4.5; capture the id, `unlink` the tempfile (unconditional cleanup, even on failure),
+   - `tbd create "<title>" --type task --parent <epic-id> -l "epic:<slug>" -l "group:<window-N>" --file <tmp>`, where `<window-N>` is the bead's window from Step 4.5 (add `-l "kind:doctrine-reconciliation"` for the terminal node from Step 4.6); capture the id, `unlink` the tempfile (unconditional cleanup, even on failure),
    - stamp the spec back-link so a cold runner can re-open context: include `spec: <spec-path>#<owning-phase-or-step>` in the bead body (and, when the tracker supports it, `tbd update <bead-id> --spec <spec-path>`),
    - for each blocker: `tbd dep add <bead-id> <blocker-id>`.
 3. `--label epic:<slug>` is the canonical grouping — the label, not the parent link, is the join key `/substrate:synthesize-session` and `bead-graph.sh` rely on. `--parent` is the nicety on top. `group:<window-N>` is the partition membership the orchestrator reads (and MAY re-batch) per `agents-parallel-execution-doctrine.md §Grouping & windows`.
@@ -155,6 +167,7 @@ integration branch, file-disjoint waves). For a simple sequential pass:
 ## Constraints
 
 - MUST derive `<slug>` from the spec directory and tag every bead (epic + children) with `epic:<slug>`. The label is the canonical epic identity — it is the contract with `/substrate:synthesize-session` and `bead-graph.sh`. Do not skip it.
+- MUST emit exactly one **terminal doctrine-reconciliation node** per epic (Step 4.6): tagged `kind: doctrine-reconciliation`, `blocked-by` every other bead, `docs/doctrine/**` in its write-scope, in its own solo terminal `group:<window-N>`. This is the in-epic sink for doctrine change — the graph MUST NOT rely on a downstream `doctrine-amendment` queue.
 - MUST cycle-check via Kahn before persisting and REFUSE on a cycle. A cyclic "DAG" is a bug, not a plan.
 - MUST be the single writer to tbd (parallel-execution doctrine Policy 1). Never hand the tbd CLI or `git push` to a subagent.
 - MUST NOT `tbd sync` — batch sync is the orchestrator's, at epic close.

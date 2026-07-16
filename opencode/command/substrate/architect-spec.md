@@ -131,7 +131,7 @@ Synthesize architect outputs into a spec following `docs/protocol/sdd/templates/
 3. **Phase per `frontend` doctrine** — hooks, routes, components, styling
 4. **Phase per `infra` doctrine** — manifests, deployment, secrets, observability
 5. **Phase: Integration + E2E** — wire everything, Playwright end-to-end verification
-6. **Phase: Doctrine Review** — MANDATORY per spec-template. Reviews compliance against every relevant doctrine.
+6. **Phase: Doctrine Reconciliation** — MANDATORY, TERMINAL per spec-template. Runs against the fully integrated feature and **applies** the ratify-only doctrine change the code earned directly to `docs/doctrine/**` (co-revertable with the feature). Not a detect-and-queue step — there is no amendment queue.
 
 `cross-cutting` doctrines (e.g. testing, error-handling) get woven into the Verify blocks of every phase rather than receiving their own phase.
 
@@ -196,7 +196,7 @@ Do NOT execute the spec yourself in this session. The handoff is the whole point
 - MUST dispatch every relevant doctrine's specialist via the **Task tool** — one task per doctrine, in a single message (parallel where the runtime supports it). If the runtime serializes Task calls, fall back to sequential dispatch and log that you're doing so — correctness over wall-clock. Requires `permission.task: allow` on the executing agent.
 - MUST run all orchestration at the primary-agent level. Do NOT delegate to an intermediate `architect-spec` subagent — a subagent cannot fan out (`doctrine-architect` runs with `permission.task: deny`), so its child dispatches would never happen. The fan-out has to originate here.
 - MUST produce specs that pass every item in the Spec Completeness Checklist (per `_SPEC-STANDARD.md`).
-- MUST include the mandatory Doctrine Review phase as the final phase.
+- MUST include the mandatory Doctrine Reconciliation phase as the final phase (terminal, apply-and-gate ratify-only — not a detect-and-queue step).
 - MUST NOT invent facts during composition — if architects didn't return a piece, ask the user or re-dispatch the relevant architect.
 - MUST auto-invoke `/substrate/graph-spec` on the freshly-written spec (Step 9) before the handoff — automatically, without asking the user whether to graph. The only skip is `graph-spec`'s own genuine REFUSE (no tracker AND user declines markdown beads); otherwise the bead DAG is always produced.
 - MUST NOT execute the spec. This command only produces it.

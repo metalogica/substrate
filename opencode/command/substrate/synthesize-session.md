@@ -1,16 +1,17 @@
 ---
-description: "Terminal phase of the SDD lifecycle — runs once per feature after /substrate/execute archives a spec, before the human moves on. Captures non-obvious session learning that the spec/commit format can't carry, and converts it into atomic doctrine fixes (capped at 5, leverage-ranked), session-filled draft doctrines for architectural axes the session introduced that no existing doctrine governs (coverage-map detection, capped at 3, per-candidate gated, own commit, written via /substrate/add-doctrine's writer), queued doctrine amendments (for human triage), beads with state-transfer prompts so a fresh agent can pick the work up cold, and parked open-design-questions filed as beads with `status: parked`. Idempotency + resumability live in `.substrate/synthesis-state.json`. The §1 session narrative + §7 Pareto cut live in the final synthesis-complete commit body — no per-feature .md report is written. Detects context compaction and warns. Per-feature idempotent. Skipping it is allowed; what gets lost is the ephemeral chat-only learning."
+description: "Terminal phase of the SDD lifecycle — runs once per feature after /substrate/execute archives a spec, before the human moves on. Captures non-obvious session learning that the spec/commit format can't carry, and converts it into atomic doctrine fixes (capped at 5, leverage-ranked), session-filled draft doctrines for architectural axes the session introduced that no existing doctrine governs (coverage-map detection, capped at 3, per-candidate gated, own commit, written via /substrate/add-doctrine's writer), beads with state-transfer prompts so a fresh agent can pick the work up cold, and parked open-design-questions filed as beads with `status: parked`. Does NOT queue doctrine amendments — ratify-only doctrine changes are applied in-epic by the executor's terminal Doctrine Reconciliation phase; non-ratify-only doctrine follow-ups land here as ordinary actionable beads, never a passive queue. Idempotency + resumability live in `.substrate/synthesis-state.json`. The §1 session narrative + §7 Pareto cut live in the final synthesis-complete commit body — no per-feature .md report is written. Detects context compaction and warns. Per-feature idempotent. Skipping it is allowed; what gets lost is the ephemeral chat-only learning."
 ---
 
 # /substrate/synthesize-session
 
-Capture the session's learning before it evaporates. Convert it into doctrine fixes, queued amendments, dependency-ordered beads, and parked open-design-questions — each shaped so a fresh agent can act on it without re-reading the originating session.
+Capture the session's learning before it evaporates. Convert it into doctrine fixes, dependency-ordered beads, and parked open-design-questions — each shaped so a fresh agent can act on it without re-reading the originating session. Doctrine changes the epic *earned* were already applied in-epic by the executor's terminal Doctrine Reconciliation phase (ratify-only); this command does **not** queue amendments.
 
 ## Position in the lifecycle
 
 ```
 /substrate/architect-spec  →  /substrate/orchestrate   →  /substrate/synthesize-session
-       (plan)                  (build + commit)              (capture + queue)
+       (plan)                  (build + commit +             (capture learning →
+                             in-epic doctrine reconcile)    beads + parked questions)
                             [primary: parallel fleet]
                             or /substrate/execute (attended single-window)
 ```
@@ -165,13 +166,12 @@ Walk the model's context and produce a draft candidate list spanning the seven c
 
 Empty categories are signal too — explicitly note them.
 
-Tag each candidate as one of six buckets:
+Tag each candidate as one of five buckets:
 
 - **immediate-fix** — single file, factual, trivial revert, would mislead the next session within hours. Caps at 5; surplus demotes to deferred-fix.
 - **deferred-fix** — same shape as immediate-fix, but past the cap. Filed as a `type: drift` bead, **not** as an amendment (preserves the trivial revert shape).
 - **missing-doctrine** — an architectural axis the session introduced with no governing doctrine file. Authored as a session-filled draft doctrine in Step 4b (cap 3; surplus demotes to a `type: feature` bead recommending the axis).
-- **queued-amendment** — has design surface, needs human judgment. Written but not committed.
-- **bead** — net new work to be done, not a doctrine edit.
+- **bead** — net new work to be done. This bucket now **absorbs non-ratify-only doctrine follow-ups**: a doctrine change that would require *changing already-shipped code* (a new MUST/MUST-NOT the epic's landed code violates) is out of scope for the epic's terminal reconciliation node (which is ratify-only), so it lands here as an **actionable `type: task` bead** describing the stricter rule + the code it obliges — never as a passive `doctrine-amendment` queue entry. Ratify-only doctrine changes are *not* candidates here at all: they were already applied in-epic by the Doctrine Reconciliation phase.
 - **parked-question** — open design question with no doctrine claim yet, no committed acceptance criterion. Filed as a `type: open-question`, `status: parked` bead so it shows up in the tracker but isn't pulled into the DAG as actionable work.
 
 Apply the already-actioned filter. Apply the cross-session dedup against past beads.
@@ -250,48 +250,16 @@ Honor the project's commit-message convention (same `git log -10` trailer inspec
 
 After each commit, append `"4b"` to `.substrate/synthesis-state.json[<feature>].completed-steps:` (idempotent — once present, leave it).
 
-### Step 5 — Queue doctrine amendments
+### Step 5 — Doctrine changes are reconciled in-epic (no amendment queue)
 
-For each `queued-amendment` candidate, compose the amendment body **in memory** (a record with frontmatter fields + body sections — no file writes yet). Persistence is tracker-aware, same discipline as beads in Steps 7+9:
+**There is no amendment queue.** This step does not exist as a persistence action any more — it is retained only as a numbered checkpoint so state-file `completed-steps` stays continuous.
 
-- `bead-tracker: tbd` → render to tempfile (`mktemp -t synth-amend-XXXXXX`) → `tbd create --type doctrine-amendment --file "$tmp" "<amendment title>"` → unlink. Working tree untouched. Substitute `npx --no-install get-tbd` for `tbd` if no global binary is on `PATH`. Capture the assigned tbd ID for the final synthesis-complete commit body.
-- `bead-tracker: none` → write to `docs/tasks/ongoing/doctrine-updates/<slug>-<YYYY-MM-DD>-<NN>.md` (`-<NN>` suffix prevents same-day collisions — start at `01`, increment if the file exists).
+Doctrine change is handled at two tiers, neither of which is a passive `type: doctrine-amendment` `status: queued` dead-letter:
 
-Same tempfile + unlink discipline as Step 9: use `trap` or equivalent. On tracker failure, leave the tempfile in place and print its path so the user can recover.
+1. **Ratify-only changes — already applied.** Any doctrine change the epic *earned* (a pattern the shipped code demonstrates, an outdated rule the code superseded, coverage the code exemplifies) was applied **in-epic** by the executor's terminal **Doctrine Reconciliation** phase (`spec-template.md` §Phase N), inside the same diff as the feature, and re-gated green. Nothing to queue here.
+2. **Non-ratify-only follow-ups — filed as actionable beads, not amendments.** A doctrine change that would require *changing already-shipped code* (a stricter MUST/MUST-NOT the landed code violates) was correctly refused by the ratify-only terminal node. It does **not** become a queued amendment — it becomes an ordinary **actionable `type: task` bead** in Steps 7+9 (the `bead` bucket from Step 3), describing the stricter rule + the code it obliges to change, so a future session can *do* it rather than let it rot in a triage backlog.
 
-In-memory amendment record (same shape regardless of tracker — only the destination differs):
-
-```markdown
----
-type: doctrine-amendment
-status: queued
-originating-spec: docs/tasks/completed/<feature>/<feature>-spec.md
-originating-session: <YYYY-MM-DD>
----
-
-# <Amendment title>
-
-## The current doctrine claim
-<quote text + file:line>
-
-## What the session observed
-<concrete observation + which commit(s) prove it>
-
-## Options
-| # | Option | Risks |
-|---|--------|-------|
-| A | <option> | <risks of doing this> |
-| B | <option> | <risks of doing this> |
-| ... | ... | ... |
-
-## Considerations
-<tradeoffs and constraints — but no single recommendation. The human decides.>
-
-## Risks of deferring
-<what gets miscoached the longer this sits>
-```
-
-Do **not** commit anything in this step — amendments are queued for human triage, not landed work. Under `tbd`, the bead carries the `status: queued` frontmatter; under `none`, the `.md` is the queue. After this step, append `5` to `.substrate/synthesis-state.json[<feature>].completed-steps:`.
+Do **not** create any `type: doctrine-amendment` bead or any file under `docs/tasks/ongoing/doctrine-updates/`. After this step, append `5` to `.substrate/synthesis-state.json[<feature>].completed-steps:`.
 
 ### Step 6 — Annotate the archived spec (mandatory if deviations exist)
 
@@ -489,8 +457,8 @@ Print this summary to the user:
   Context:                full | compacted
   Doctrine fixes:         <N> commits          (cap hit: <yes/no>, demoted: <M>)
   Doctrines authored:     <N> {docs/doctrine/<id>-doctrine.md + manifest entry, each its own commit}  (cap hit: <yes/no>, demoted: <M>)
-  Queued amendments:      <N> {in tbd as type=doctrine-amendment | as files at docs/tasks/ongoing/doctrine-updates/}  (tracker-dependent)
-  Beads drafted:          <N> {in tbd | as files at docs/tasks/ongoing/<bead-slug>/bead.md}  (tracker-dependent)
+  Doctrine reconciled:    in-epic by the executor's Doctrine Reconciliation phase (ratify-only) — not queued here
+  Beads drafted:          <N> {in tbd | as files at docs/tasks/ongoing/<bead-slug>/bead.md}  (tracker-dependent; incl. any non-ratify-only doctrine follow-ups as type=task)
   Parked questions:       <N> {in tbd as type=open-question status=parked | as files at docs/tasks/ongoing/<slug>/bead.md status=parked}
   Pareto cut (top by leverage):
     - <bead-id-or-title>
@@ -504,7 +472,7 @@ Print this summary to the user:
 
 Next:
   - Review the <N> authored draft doctrines (Status: Draft) — they're filled from session context; vet the rules, then promote to Binding.
-  - Triage queued amendments when you have a quiet moment.
+  - Pick up any non-ratify-only doctrine follow-ups — they're in the DAG as actionable beads.
   - Pick a bead off the top of the DAG when you're ready to keep building.
   - git push when you're ready — this will push: the spec-execute commit, the <N> doctrine-fix commits, the <N> authored-doctrine commits, the post-execution-notes commit, and this synthesis-complete commit, together as one batch.
 ```
@@ -531,7 +499,6 @@ Doctrine fixes this session: <SHA-list>
 Doctrines authored this session: <id + path + SHA, one per line>
 Beads created: <tbd-id-list or markdown-path-list>
 Parked questions: <tbd-id-list or markdown-path-list>
-Queued amendments: <tbd-id-list or markdown-path-list>
 "
 ```
 
@@ -544,7 +511,8 @@ Set `.substrate/synthesis-state.json[<feature>].status` to `complete` and `.subs
 - **MUST NOT** mix synthesis commits with the spec-execute commit. Each immediate fix is its own commit. The spec-execute commit must remain one revertable unit.
 - **MUST NOT** create beads that duplicate existing beads. Run the dedup gate against both the tracker AND `docs/synthesis-index.md` unconditionally.
 - **MUST NOT** re-apply doctrine fixes that already shipped earlier in this session — apply the already-actioned filter (Step 2) before categorizing.
-- **MUST** treat the bead-tracker as canonical when configured. If `bead-tracker: tbd`, persistence for beads (Step 9), doctrine amendments (Step 5), and parked-questions (Step 9) uses ephemeral tempfiles under `/tmp` (or `$TMPDIR`); Step 9 is mandatory with default `Y`. Under `tbd`, the working tree MUST NOT receive any markdown file under `docs/tasks/ongoing/**` — neither bead bodies nor amendment bodies nor parked-question bodies. If `bead-tracker: none`, markdown under `docs/tasks/ongoing/**` is canonical. Never present tbd-persistence as an optional mirror in a tbd-configured repo — that inverts the source-of-truth and pushes the user toward dropping work on the floor.
+- **MUST** treat the bead-tracker as canonical when configured. If `bead-tracker: tbd`, persistence for beads (Step 9) and parked-questions (Step 9) uses ephemeral tempfiles under `/tmp` (or `$TMPDIR`); Step 9 is mandatory with default `Y`. Under `tbd`, the working tree MUST NOT receive any markdown file under `docs/tasks/ongoing/**` — neither bead bodies nor parked-question bodies. If `bead-tracker: none`, markdown under `docs/tasks/ongoing/**` is canonical. Never present tbd-persistence as an optional mirror in a tbd-configured repo — that inverts the source-of-truth and pushes the user toward dropping work on the floor.
+- **MUST NOT** queue doctrine amendments. There is no `type: doctrine-amendment` bead, no `status: queued` dead-letter, no `docs/tasks/ongoing/doctrine-updates/` file. Ratify-only doctrine change lands **in-epic** via the executor's terminal Doctrine Reconciliation phase; non-ratify-only doctrine follow-ups become ordinary actionable `type: task` beads (Step 9). Do not reintroduce the queue under any tracker.
 - **MUST NOT** write a per-feature synthesis report (no `docs/tasks/completed/<feature>/synthesis-*.md`). The §1 narrative + §7 Pareto cut live in the synthesis-complete commit body. The two append-only aggregate ledgers — `docs/synthesis-index.md` and `docs/cross-repo-followups.md` — are the only `.md` writes outside `docs/tasks/ongoing/<bead-slug>/bead.md` under tracker=`none`, and they remain markdown regardless of tracker.
 - **MUST** persist resumability state in `.substrate/synthesis-state.json`. Create the file with `{}` if missing. Append step numbers to `completed-steps:` after each step lands. On re-run with `status: in-progress`, RESUME — don't restart.
 - **MUST** carry the §1 narrative + §7 Pareto cut in the final synthesis-complete commit body — git is the audit log. Backfill `.substrate/synthesis-state.json[<feature>].narrative-commit` with that commit's SHA after it lands.
@@ -553,7 +521,7 @@ Set `.substrate/synthesis-state.json[<feature>].status` to `complete` and `.subs
 - **MUST** author a session-filled draft doctrine (Step 4b) for any architectural axis the session *introduced* that no existing doctrine governs, detected via the coverage map (touched areas ∖ governed areas), not via drift. Cap at 3 per run, ranked by blast radius; surplus demotes to a `type: feature` bead recommending the axis. Each authored doctrine is `Status: Draft`, gated per-candidate (`y / modify / defer`, **not** default-`Y`), written via `/substrate/add-doctrine`'s writer (its Step 3 + Step 4) with filled sections in place of the placeholder stub, and lands as its own `doctrine(<id>): initial draft from <feature> session` commit. Never emit a bare placeholder stub from this step — the session context is the point.
 - **MUST** produce a top-3-to-5 Pareto cut. It lives in the synthesis-complete commit body and the Step 10 handoff print — not in any standalone file.
 - **MUST** annotate the archived spec with a `### Post-execution notes` block whenever deviations occurred. Replace, don't append.
-- **MUST** tag every bead, amendment, and parked-question with `originating-spec` + `originating-session` for provenance.
+- **MUST** tag every bead and parked-question with `originating-spec` + `originating-session` for provenance.
 - **MUST** record `context: compacted` in `.substrate/synthesis-state.json[<feature>]` if Step 0 detected compaction and the user proceeded anyway.
 - **MUST** detect cycles in the bead DAG (Step 8). On cycle, REFUSE and ask the user to break it.
 - **MUST NOT** execute cross-repo work (e.g., edits to the substrate plugin repo from within a scaffolded project). Flag in `docs/cross-repo-followups.md`, then stop.

@@ -75,7 +75,7 @@ Read the full spec at the provided path. Verify it contains:
 - `## N. Prompt Execution Strategy` section (required per `execution-format.md`).
 - At least one `### Phase N:` subsection.
 - Every step has a `##### Verify` block.
-- The final phase is "Doctrine Review" (mandatory per `spec-template.md` §N).
+- The final phase is "Doctrine Reconciliation" (mandatory, terminal per `spec-template.md` §N).
 
 If any structural check fails, stop and report which section is broken so the user can fix the spec before re-running.
 
@@ -96,7 +96,7 @@ Execution Plan — <feature>
   Phase 2: Schema + Backend       (4 steps, gate: pnpm app:compile && pnpm app:test)
   Phase 3: Frontend               (5 steps, gate: pnpm app:compile && pnpm app:test)
   Phase 4: Integration + E2E      (2 steps, gate: pnpm app:test:e2e)
-  Phase 5: Doctrine Review        (2 steps, gate: —)
+  Phase 5: Doctrine Reconciliation (1 step, gate: re-run epic gate on integrated tip)
 
 Start Phase 1? (y / n)
 ```
@@ -144,13 +144,19 @@ Continue to Phase <N+1>? (y / n / pause)
 
 Wait for explicit approval. `n` or `pause` stops execution cleanly so the user can inspect before resuming.
 
-### Step 4. Final phase: Doctrine Review
+### Step 4. Final phase: Doctrine Reconciliation
 
-The last phase is always `Phase N: Doctrine Review` per `spec-template.md`. It's not code — it's a compliance check. Walk its steps like any other phase: run the doctrine-review prompt, then persist any amendments **tracker-aware, exactly as the template's Step N.1 now specifies** — under `bead-tracker: none` write `docs/tasks/ongoing/<feature>/doctrine-amendments.md`; under `bead-tracker: tbd` write **no** working-tree markdown and instead report the findings for `/substrate:synthesize-session` to queue as `type: doctrine-amendment` beads — then run the gate.
+The last phase is always `Phase N: Doctrine Reconciliation` per `spec-template.md`. It runs against the **fully integrated feature** and **applies** the doctrine change the code earned — it does not detect-and-queue. `/substrate:execute` is depth-0 and attended, so apply the mutation directly:
+
+1. Read the full integrated diff (this feature's changes vs. the pre-execution base) and the doctrines the spec loaded.
+2. **Edit `docs/doctrine/**` directly** to codify what the landed code demonstrates — under the **ratify-only** rule: you may only relax an outdated rule, promote a pattern the code demonstrates, or add coverage the code exemplifies. You may **never** introduce a MUST / MUST-NOT the just-landed code violates. If reconciliation would require a stricter rule that invalidates shipped code, do **not** apply it here — leave it for `/substrate:synthesize-session`.
+3. **Re-run the gate on the integrated tip** (`pnpm app:compile && pnpm app:lint && pnpm app:test`). Green ⟹ the mutation was ratify-only and lands with the feature in the same commit. Red ⟹ not ratify-only; revert the doctrine edit and defer.
+
+There is **no** `doctrine-amendments.md`, no `type: doctrine-amendment` bead, no handoff queue — behavior is identical regardless of `bead-tracker`. If no doctrine change is earned, this phase is a no-op.
 
 ### Step 5. Archive the task
 
-Once the Doctrine Review phase passes, archive the feature directory:
+Once the Doctrine Reconciliation phase passes, archive the feature directory:
 
 ```bash
 mkdir -p docs/tasks/completed
@@ -165,7 +171,7 @@ git commit -m "feat(<feature>): execute spec
 
 Spec: docs/tasks/completed/<feature>/<feature>-spec.md
 Phases: <N>
-Doctrine amendments: <none | path>
+Doctrine reconciled in-epic: <yes (docs/doctrine/… touched) | no change earned>
 "
 ```
 
@@ -179,7 +185,7 @@ Do NOT push. The user decides when to push.
 Feature: <feature>
 Phases completed: <N>
 Archive: docs/tasks/completed/<feature>/
-Doctrine amendments: <path or "none">
+Doctrine reconciled in-epic: <docs/doctrine/… touched | no change earned>
 
 Next:
   - git push when you're ready
@@ -191,7 +197,7 @@ Next:
 - MUST parse the spec before executing anything. A malformed spec must fail fast, not halfway through.
 - MUST stop execution at any failed verify/gate — do NOT skip over failures.
 - MUST pause for user approval between phases (after each gate). Non-negotiable — gated execution is the whole point of this skill.
-- MUST run the Doctrine Review phase — never skip the final phase.
+- MUST run the Doctrine Reconciliation phase — never skip the final phase — and **apply** any earned ratify-only doctrine change to `docs/doctrine/**` in-epic, then re-gate. Never queue it as a `doctrine-amendment` or write a `doctrine-amendments.md`.
 - MUST commit after successful execution (step 6). One commit per spec = one revertable unit.
 - MUST NOT push to GitHub or deploy — that's for the user or `/substrate:deploy`.
 - MUST NOT invent steps beyond what the spec contains. The spec is binding during execution (per `_SPEC-STANDARD.md` §3).

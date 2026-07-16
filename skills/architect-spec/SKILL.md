@@ -132,7 +132,7 @@ Synthesize architect outputs into a spec following `docs/protocol/sdd/templates/
 3. **Phase per `frontend` doctrine** — hooks, routes, components, styling
 4. **Phase per `infra` doctrine** — manifests, deployment, secrets, observability
 5. **Phase: Integration + E2E** — wire everything, Playwright end-to-end verification
-6. **Phase: Doctrine Review** — MANDATORY per spec-template. Reviews compliance against every relevant doctrine.
+6. **Phase: Doctrine Reconciliation** — MANDATORY, TERMINAL per spec-template. Runs against the fully integrated feature and **applies** the ratify-only doctrine change the code earned directly to `docs/doctrine/**` (co-revertable with the feature). Not a detect-and-queue step — there is no amendment queue.
 
 `cross-cutting` doctrines (e.g. testing, error-handling) get woven into the Verify blocks of every phase rather than receiving their own phase.
 
@@ -195,7 +195,7 @@ Do NOT execute the spec yourself in this session. The handoff is the whole point
 - MUST dispatch every relevant doctrine's specialist **in parallel** via a single Agent-tool message with N tool calls. Sequential dispatch is wrong — it costs N× the wall-clock and yields no benefit.
 - MUST run all orchestration at skill level (depth 0). Do NOT delegate to an intermediate `architect-spec` subagent — the harness depth-cap will block its child dispatches. This is the whole reason the architect-spec subagent was removed.
 - MUST produce specs that pass every item in the Spec Completeness Checklist (per `_SPEC-STANDARD.md`).
-- MUST include the mandatory Doctrine Review phase as the final phase.
+- MUST include the mandatory Doctrine Reconciliation phase as the final phase (terminal, apply-and-gate ratify-only — not a detect-and-queue step).
 - MUST NOT invent facts during composition — if architects didn't return a piece, ask the user or re-dispatch the relevant architect.
 - MUST NOT execute the spec. This skill only produces it.
 - MUST hand off with `/substrate:orchestrate` as the **primary** door and `/substrate:execute` as the **attended** single-window alternative — never present attended execution as the default.
