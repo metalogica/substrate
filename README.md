@@ -37,6 +37,30 @@
 
 See the commands at the top of this README. After install, all eight skills appear under `/substrate:*`.
 
+### The `substrate` CLI (`substrate tasks`)
+
+Alongside the `/substrate:*` skills, substrate ships a small shell CLI. Today it's `substrate tasks` — a live terminal view of your project's bead DAG (waves, blockers, status, updating as a fleet works). It's a self-locating binary you link onto your PATH once.
+
+The marketplace-installed plugin lives in a **version-keyed cache directory that changes on every update**, so link the CLI from a stable git clone instead:
+
+```bash
+git clone https://github.com/metalogica/substrate.git ~/substrate
+~/substrate/scripts/substrate-link.sh      # symlinks the binary → ~/.local/bin/substrate
+```
+
+Then, from inside any substrate/adopted project:
+
+```bash
+substrate tasks                            # live bead TUI; reads tbd from your current dir
+substrate tasks --tbd <epic-slug>          # pin one epic   ·   --once renders once and exits
+```
+
+Notes:
+- The binary resolves its own path — no `SUBSTRATE_ROOT` to set, and one link serves every project (it reads tbd from wherever you run it).
+- If `~/.local/bin` isn't on your PATH, the linker prints the line to add — it never edits your shell rc.
+- A shell function or alias named `substrate` shadows the binary; remove it if you have one.
+- Change the target dir with `scripts/substrate-link.sh <dir>` or `SUBSTRATE_BIN_DIR=<dir>`. Remove with `scripts/substrate-unlink.sh`.
+
 ### Development
 
 To iterate on the plugin itself without pushing a release for every change, use the local-path marketplace + cache-symlink workflow.
@@ -80,16 +104,7 @@ This removes the symlink, reinstalls from the marketplace, and leaves you pointi
 - If the dev symlink ever gets overwritten by an auto-update, just re-run `./scripts/dev-link.sh`.
 - A broken feature branch = a broken plugin in your test session. That's the intended behavior (you're testing WIP); check out `main` if you need a known-good state.
 
-**The `substrate` CLI.** A thin, self-locating launcher for the tooling that lives outside Claude Code — currently `substrate tasks`, the live bead TUI. It's a real binary (`scripts/substrate`); link it onto your PATH once:
-
-```bash
-./scripts/substrate-link.sh          # symlinks scripts/substrate → ~/.local/bin/substrate
-                                     #   (pass a dir or set SUBSTRATE_BIN_DIR to change it)
-substrate tasks                      # live bead TUI for the project in your CURRENT dir
-./scripts/substrate-unlink.sh        # remove it
-```
-
-The binary resolves its own path, so there's no `SUBSTRATE_ROOT` to set and the link survives branch switches. It reads tbd from your current directory, so one link serves every substrate/adopted project. If `~/.local/bin` isn't on your PATH the linker warns with the line to add (it won't edit your shell rc). A shell function/alias named `substrate` would shadow the binary — remove it if you have one.
+**The `substrate` CLI.** Link it as in [The `substrate` CLI](#the-substrate-cli-substrate-tasks) above — but as a dev, link from your **working clone** (`./scripts/substrate-link.sh`) rather than a separate one, so the binary tracks your branch switches.
 
 **New machine, from scratch.** The full sequence spans the shell *and* Claude Code (the plugin install isn't the shell's to run):
 
