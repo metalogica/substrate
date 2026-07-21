@@ -80,6 +80,25 @@ This removes the symlink, reinstalls from the marketplace, and leaves you pointi
 - If the dev symlink ever gets overwritten by an auto-update, just re-run `./scripts/dev-link.sh`.
 - A broken feature branch = a broken plugin in your test session. That's the intended behavior (you're testing WIP); check out `main` if you need a known-good state.
 
+**The `substrate` CLI.** A thin, self-locating launcher for the tooling that lives outside Claude Code — currently `substrate tasks`, the live bead TUI. It's a real binary (`scripts/substrate`); link it onto your PATH once:
+
+```bash
+./scripts/substrate-link.sh          # symlinks scripts/substrate → ~/.local/bin/substrate
+                                     #   (pass a dir or set SUBSTRATE_BIN_DIR to change it)
+substrate tasks                      # live bead TUI for the project in your CURRENT dir
+./scripts/substrate-unlink.sh        # remove it
+```
+
+The binary resolves its own path, so there's no `SUBSTRATE_ROOT` to set and the link survives branch switches. It reads tbd from your current directory, so one link serves every substrate/adopted project. If `~/.local/bin` isn't on your PATH the linker warns with the line to add (it won't edit your shell rc). A shell function/alias named `substrate` would shadow the binary — remove it if you have one.
+
+**New machine, from scratch.** The full sequence spans the shell *and* Claude Code (the plugin install isn't the shell's to run):
+
+1. `git clone <substrate> && cd substrate`
+2. In Claude Code: `/plugin marketplace add "$PWD"` → `/plugin install substrate@metalogica` → `/reload-plugins`
+3. `./scripts/dev-link.sh` — hot-reload the plugin from source
+4. `./scripts/prerequisites.sh` — check node/pnpm/tbd
+5. `./scripts/substrate-link.sh` — put `substrate` on your PATH
+
 ## Using substrate in OpenCode
 
 substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 14 skills are

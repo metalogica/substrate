@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# substrate — CLI entry point for substrate tooling. A real binary: symlink it
+# onto your PATH with scripts/substrate-link.sh, then run `substrate <verb>` from
+# anywhere. Self-locating — it resolves its own path through symlinks to find the
+# repo, so there is no SUBSTRATE_ROOT to set.
+#
+#   substrate tasks [--tbd <slug>] [--fixture <path>] [--once]
+#       live bead TUI for the project in your CURRENT directory
+#
+# Subcommands read tbd + .substrate from your current directory, so run from
+# inside whatever project you want to see.
+set -euo pipefail
+
+# Resolve BASH_SOURCE through symlinks (macOS bash 3.2 safe) → repo root.
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [ "${src#/}" = "$src" ] && src="$dir/$src"   # relative link → re-anchor
+done
+here="$(cd -P "$(dirname "$src")" && pwd)"      # .../substrate/scripts
+root="$(dirname "$here")"                        # .../substrate
+
+sub="${1:-}"
+[ "$#" -gt 0 ] && shift || true
+
+case "$sub" in
+  tasks)
+    exec "$root/references/docs-core/docs/scripts/bead-tui.sh" "$@"
+    ;;
+  ""|-h|--help|help)
+    cat <<'EOF'
+substrate — substrate tooling CLI
+
+usage:
+  substrate tasks [--tbd <slug>] [--fixture <path>] [--once]
+      live bead TUI for the project in your current directory
+EOF
+    ;;
+  *)
+    echo "substrate: unknown command '$sub' (try: substrate tasks)" >&2
+    exit 2
+    ;;
+esac
