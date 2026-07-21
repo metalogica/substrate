@@ -27,6 +27,33 @@ Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **q / 
 Flags: `--tbd <slug>`, `--fixture <path>`, `--once`, `--list-views`, `--interval <ms>` (idle gap
 between polls, default 800).
 
+## Shell shortcut (`substrate tasks`)
+
+`bead-tui.sh` resolves its own path through symlinks, and the TUI reads tbd + `.substrate`
+from your **current directory** — so **one copy on disk serves the whole machine**. Point a
+shell function at a single canonical copy and run it from inside whatever project you want to
+see, instead of maintaining a per-repo shortcut:
+
+```zsh
+# ~/.zshrc — one definition, run from anywhere. SUBSTRATE_ROOT = your substrate clone.
+export SUBSTRATE_ROOT="$HOME/code/metalogica/substrate"
+substrate() {
+  local sub="${1:-}"; (( $# )) && shift
+  local tui="$SUBSTRATE_ROOT/references/docs-core/docs/scripts/bead-tui.sh"
+  case "$sub" in
+    tasks) [[ -x $tui ]] || { print -u2 "substrate: TUI not found at $tui"; return 1; }
+           "$tui" "$@" ;;                                  # → the live bead TUI
+    ""|-h|--help) print "usage: substrate tasks [--tbd <slug>] [--fixture <path>] [--once]" ;;
+    *) print -u2 "substrate: unknown command '$sub'"; return 2 ;;
+  esac
+}
+```
+
+Then `substrate tasks` (or `substrate tasks --tbd <epic-slug>`) opens the TUI for the project
+you're standing in — one script on disk, no per-repo copies to keep in sync. (The symlink
+resolution is what lets you instead `ln -s "$tui" ~/.local/bin/substrate-tasks` onto PATH if
+you prefer a bare command over a function — same single-definition idea.)
+
 ## Views (tabs)
 
 - **One tab per epic** (`epic:<slug>` label grouping), newest first — the latest is active on
