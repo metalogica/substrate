@@ -1,0 +1,30 @@
+
+  substrate ui — keys & commands
+  ──────────────────────────────────────────────────────────────
+
+  windows                          (no prefix needed)
+    M-1   board     bead board TUI — capture · groom · queue
+    M-2   specs     shell in docs/tasks/ongoing
+    M-3   agent     interactive claude — the sync SDD seat
+    M-n   new agent window in the current pane's directory
+                    (window survives claude exiting — drops to shell)
+    M-?   this help
+
+  tmux basics                      (prefix = Ctrl-b)
+    prefix d        detach — the session persists
+    prefix [        scroll / copy mode (q exits)
+    prefix c        new window        prefix ,   rename window
+    prefix 0-9      jump to window N (beyond M-1..3)
+
+  CLI
+    substrate ui                     attach or create this workspace
+    substrate tasks                  board TUI standalone
+    tmux -L substrate kill-server    full reset — also reloads the conf
+
+  troubleshooting
+    M-keys dead? your terminal must send Option as Meta:
+      iTerm2        Profiles → Keys → Left Option: Esc+
+      Terminal.app  Profiles → Keyboard → Use Option as Meta
+    inside your personal tmux? detach first, or: TMUX= substrate ui
+
+  q closes this help

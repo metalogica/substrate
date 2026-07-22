@@ -60,6 +60,8 @@ if ! t has-session -t "=$session" 2>/dev/null; then
   # Server-birth path: -f applies the substrate conf iff this creates the server.
   tmux -L "$SOCKET" -f "$conf" new-session -d -s "$session" -c "$repo_root" \
     -n board "'$substrate_cli' tasks; exec \${SHELL:-zsh}"
+  # The M-? help popup resolves its file through this (fallback-defaulted in conf).
+  t set-environment -g SUBSTRATE_SCRIPTS "$here"
   t new-window -t "$session:1" -n specs -c "$specs_dir"
   if [ "$have_claude" -eq 1 ]; then
     t new-window -t "$session:2" -n agent -c "$repo_root" "claude; exec \${SHELL:-zsh}"
