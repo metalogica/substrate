@@ -690,7 +690,22 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
   const halfPage = () => Math.max(1, Math.floor((process.stdout.rows || 40) / 2));
   const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };
   const openDetail = async (id) => { if (!id) return; detailLoading = true; draw(); detail = await tshow(id); detailLoading = false; draw(); };
-  process.stdin.on('data', async (k) => {
+  // A single stdin 'data' event can batch several keystrokes (fast typing, key-repeat, paste) —
+  // e.g. tapping j quickly arrives as one 'jjj' chunk, and an exact `k === 'j'` test then fails.
+  // Split each chunk into individual key tokens (CSI escape sequences like \x1b[B kept whole, bare
+  // Esc kept, everything else one char) and dispatch them one at a time.
+  const tokenizeKeys = (s) => {
+    const toks = [];
+    for (let i = 0; i < s.length;) {
+      if (s[i] === '\x1b' && s[i + 1] === '[') {                 // CSI: \x1b[ … <final A–Z/a–z/~>
+        let j = i + 2;
+        while (j < s.length && !/[A-Za-z~]/.test(s[j])) j++;
+        toks.push(s.slice(i, j + 1)); i = j + 1;
+      } else { toks.push(s[i]); i++; }                           // bare Esc or any single char
+    }
+    return toks;
+  };
+  const handleKey = async (k) => {
     // (1) capture mode owns every key while active
     if (capture) {
       if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; draw(); }
@@ -767,7 +782,8 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (ev.type === 'fixture') return;                    // fixture ids aren't real tbd beads
       await openDetail(orderedIds(graphForView(ev))[selected]);
     }
-  });
+  };
+  process.stdin.on('data', async (chunk) => { for (const k of tokenizeKeys(chunk)) await handleKey(k); });
   process.stdout.on('resize', () => draw());                 // re-clip the viewport to the new terminal height
 }
 
