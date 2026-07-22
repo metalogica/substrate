@@ -392,6 +392,40 @@ function boardRows() {
   return { un, gr, flat: [...un, ...gr] };
 }
 
+// ---- inline single-line editor (shared by `n` new-task capture and `r` title rename) ---------
+//   State = { buf, pos }. Beyond append+backspace it supports arrow keys, Home/End (Ctrl-A/E),
+//   word jumps (Ctrl-/Alt-←→), and readline deletes (Backspace, Delete, Ctrl-W word, Ctrl-U/K
+//   line) so the caret can sit anywhere in the text. Returns true if k was consumed as an edit.
+//   (Bare Esc / Enter are handled by the caller before this, so they never reach here.)
+function lineEdit(s, k) {
+  const b = s.buf; const p = Math.max(0, Math.min(s.pos ?? b.length, b.length));
+  const wordL = (i) => { while (i > 0 && b[i - 1] === ' ') i--; while (i > 0 && b[i - 1] !== ' ') i--; return i; };
+  const wordR = (i) => { while (i < b.length && b[i] === ' ') i++; while (i < b.length && b[i] !== ' ') i++; return i; };
+  switch (k) {
+    case '\x1b[D': s.pos = Math.max(0, p - 1); return true;                          // ←
+    case '\x1b[C': s.pos = Math.min(b.length, p + 1); return true;                   // →
+    case '\x01': case '\x1b[H': case '\x1b[1~': s.pos = 0; return true;              // Ctrl-A / Home
+    case '\x05': case '\x1b[F': case '\x1b[4~': s.pos = b.length; return true;       // Ctrl-E / End
+    case '\x1b[1;5D': case '\x1b[1;3D': s.pos = wordL(p); return true;               // Ctrl-← / Alt-← : word left
+    case '\x1b[1;5C': case '\x1b[1;3C': s.pos = wordR(p); return true;               // Ctrl-→ / Alt-→ : word right
+    case '\x7f': case '\b': if (p > 0) { s.buf = b.slice(0, p - 1) + b.slice(p); s.pos = p - 1; } return true;  // Backspace
+    case '\x1b[3~': s.buf = b.slice(0, p) + b.slice(p + 1); s.pos = p; return true;  // Delete (forward)
+    case '\x17': { const i = wordL(p); s.buf = b.slice(0, i) + b.slice(p); s.pos = i; return true; }            // Ctrl-W word
+    case '\x15': s.buf = b.slice(p); s.pos = 0; return true;                         // Ctrl-U: delete to line start
+    case '\x0b': s.buf = b.slice(0, p); s.pos = p; return true;                      // Ctrl-K: delete to line end
+    default:
+      if (k >= ' ' && !k.startsWith('\x1b')) { s.buf = b.slice(0, p) + k + b.slice(p); s.pos = p + 1; return true; }  // insert
+      return false;
+  }
+}
+
+// Render an inline editor's buffer with a block caret (reverse video) under the char at pos.
+function editLine(label, s) {
+  const b = s.buf; const p = Math.max(0, Math.min(s.pos ?? b.length, b.length));
+  const at = p < b.length ? b[p] : ' ';
+  return `${C.in_progress}▶ ${label}:${C.reset} ${C.title}${b.slice(0, p)}${C.rev}${at}${C.unrev}${b.slice(p + 1)}${C.reset}`;
+}
+
 function renderBoard(meta) {
   const spin = ['⟳', '⟲'][meta.frame % 2];
   const { un, gr, flat } = boardRows();
@@ -425,8 +459,8 @@ function renderBoard(meta) {
   section('UNGROOMED', un);
   section('GROOMED', gr);
   lines.push('');
-  if (capture) lines.push(`${C.in_progress}▶ new:${C.reset} ${C.title}${capture.buf}${C.reset}▌`);
-  if (renaming) lines.push(`${C.in_progress}▶ title:${C.reset} ${C.title}${renaming.buf}${C.reset}▌`);
+  if (capture) lines.push(editLine('new', capture));
+  if (renaming) lines.push(editLine('title', renaming));
   lines.push(`${C.dim}n new · e body · r title · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
@@ -512,6 +546,7 @@ function renderHelp(meta) {
   row('n', 'new task — type title, Enter commits (stays), Esc exits');
   row('Enter', 'open bead detail');
   row('r', 'rename — edit the title inline (Enter saves, Esc cancels)');
+  row('  ↑ in n/r', '← → move caret · Home/End (^A/^E) · ^←→ word · Del/^W/^U/^K');
   row('e', 'edit body in $EDITOR');
   row('space', 'toggle groomed (ungroomed ↔ groomed)');
   row('x', 'kill / close selected');
@@ -719,20 +754,18 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
   const handleKey = async (k) => {
     // (1) capture mode owns every key while active
     if (capture) {
-      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; draw(); }
+      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; capture.pos = 0; draw(); }
       else if (k === '\x1b') { capture = null; await flushSync(); draw(); }               // Esc — exit + flush
-      else if (k === '\x7f' || k === '\b') { capture.buf = capture.buf.slice(0, -1); draw(); }
       else if (k === '\x03') { await quit(); }                                            // Ctrl-C
-      else if (k >= ' ' && !k.startsWith('\x1b')) { capture.buf += k; draw(); }
+      else if (lineEdit(capture, k)) { draw(); }                                          // arrows / Home-End / word / insert-delete
       return;
     }
     // (1b) inline title-rename owns every key while active
     if (renaming) {
       if (k === '\r' || k === '\n') { const t = renaming.buf.trim(); const id = renaming.id; renaming = null; if (t) { await boardWrite(['update', id, '--title', t, '--no-sync']); await flushSync(); } else draw(); }
       else if (k === '\x1b') { renaming = null; draw(); }                                   // Esc — cancel, keep old title
-      else if (k === '\x7f' || k === '\b') { renaming.buf = renaming.buf.slice(0, -1); draw(); }
       else if (k === '\x03') { await quit(); }                                              // Ctrl-C
-      else if (k >= ' ' && !k.startsWith('\x1b')) { renaming.buf += k; draw(); }
+      else if (lineEdit(renaming, k)) { draw(); }                                           // arrows / Home-End / word / insert-delete
       return;
     }
     // (2) epic-index filter capture owns every key while typing
@@ -761,7 +794,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === '\x1b[B' || k === 'j') { boardCursor = Math.min(Math.max(0, flat.length - 1), boardCursor + 1); draw(); return; }
       if (k === 'g') { boardCursor = 0; draw(); return; }
       if (k === 'G') { boardCursor = Math.max(0, flat.length - 1); draw(); return; }
-      if (k === 'n') { capture = { buf: '' }; draw(); return; }
+      if (k === 'n') { capture = { buf: '', pos: 0 }; draw(); return; }
       if (sel) {
         const groomed = (sel.labels || []).includes('groomed');
         if (k === '\r' || k === '\n') { await openDetail(sel.id); return; }
@@ -771,7 +804,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
         if (k === '[') { await boardWrite(['update', sel.id, '--priority', String(Math.min(4, (sel.priority ?? 2) + 1)), '--no-sync']); return; }  // less important
         if (k === 't') { const order = ['task', 'feature', 'bug', 'chore']; const next = order[(order.indexOf(sel.kind) + 1) % order.length]; await boardWrite(['update', sel.id, '--type', next, '--no-sync']); return; }
         if (k === 'e') { await editBody(sel.id); return; }
-        if (k === 'r') { renaming = { id: sel.id, buf: sel.title }; draw(); return; }        // inline edit the title
+        if (k === 'r') { renaming = { id: sel.id, buf: sel.title, pos: sel.title.length }; draw(); return; }   // inline edit the title (caret at end)
       }
       return;                                                                            // swallow other keys on the board
     }
