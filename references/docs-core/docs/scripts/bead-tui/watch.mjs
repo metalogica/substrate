@@ -54,9 +54,14 @@ async function resolveBin() {
   try { await pexec('npx', ['--no-install', 'get-tbd', '--version']); return (_bin = { cmd: 'npx', pre: ['--no-install', 'get-tbd'] }); } catch { /* none */ }
   return (_bin = null);
 }
+// Kill a wedged tbd call after TBD_TIMEOUT. `tbd sync` does git network I/O while holding the store
+// lock; if it hangs (offline, auth prompt with no TTY), every later write queues behind it forever
+// and edits silently vanish. A hard timeout kills the child, releases the lock, and lets the TUI
+// recover instead of deadlocking. Reads just return null (last good frame is kept).
+const TBD_TIMEOUT = 30000;
 async function tbd(a) {
   const b = await resolveBin(); if (!b) return null;
-  try { const { stdout } = await pexec(b.cmd, [...b.pre, ...a], { maxBuffer: 1 << 26 }); return stdout; } catch { return null; }
+  try { const { stdout } = await pexec(b.cmd, [...b.pre, ...a], { maxBuffer: 1 << 26, timeout: TBD_TIMEOUT, killSignal: 'SIGTERM' }); return stdout; } catch { return null; }
 }
 const tbdAvailable = async () => (await resolveBin()) !== null;
 function jparse(s, fallback) { try { return JSON.parse(s); } catch { return fallback; } }
@@ -421,7 +426,8 @@ function renderBoard(meta) {
   section('GROOMED', gr);
   lines.push('');
   if (capture) lines.push(`${C.in_progress}▶ new:${C.reset} ${C.title}${capture.buf}${C.reset}▌`);
-  lines.push(`${C.dim}n new · e body · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
+  if (renaming) lines.push(`${C.in_progress}▶ title:${C.reset} ${C.title}${renaming.buf}${C.reset}▌`);
+  lines.push(`${C.dim}n new · e body · r title · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
 
@@ -505,6 +511,7 @@ function renderHelp(meta) {
   row('↑ ↓  j k', 'move cursor');
   row('n', 'new task — type title, Enter commits (stays), Esc exits');
   row('Enter', 'open bead detail');
+  row('r', 'rename — edit the title inline (Enter saves, Esc cancels)');
   row('e', 'edit body in $EDITOR');
   row('space', 'toggle groomed (ungroomed ↔ groomed)');
   row('x', 'kill / close selected');
@@ -554,6 +561,7 @@ let detail = null;                          // opened bead detail object (tbd sh
 let detailLoading = false;                  // Enter pressed, tbd show in flight
 let boardCursor = 0;                        // selected row within the board's flat list
 let capture = null;                         // { buf } while capturing a new task title; null otherwise
+let renaming = null;                        // { id, buf } while editing an existing bead's title inline; null otherwise
 let dirty = false;                          // pending --no-sync board writes awaiting a flush
 let showHelp = false;                       // ? overlay: full keyboard reference
 let epicCursor = 0;                         // selected row within the epics index
@@ -684,7 +692,7 @@ let lastMtime = sourceMtime(VIEWS[active]);
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
   // Lateral view switch (Tab / 1–2) resets ALL per-view cursors, including the epics drill + filter.
-  const resetView = () => { selected = 0; scrollTop = 0; boardCursor = 0; epicCursor = 0; drillSlug = null; detail = null; capture = null; showHelp = false; epicFiltering = false; epicFilter = ''; };
+  const resetView = () => { selected = 0; scrollTop = 0; boardCursor = 0; epicCursor = 0; drillSlug = null; detail = null; capture = null; renaming = null; showHelp = false; epicFiltering = false; epicFilter = ''; };
   const switchView = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); resetView(); draw(); };
   const jumpView = (i) => { if (i < 0 || i >= VIEWS.length) return; active = i; resetView(); draw(); };
   const drillInto = (slug) => { drillSlug = slug; selected = 0; scrollTop = 0; draw(); };   // Epics index → one epic's beads
@@ -716,6 +724,15 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       else if (k === '\x7f' || k === '\b') { capture.buf = capture.buf.slice(0, -1); draw(); }
       else if (k === '\x03') { await quit(); }                                            // Ctrl-C
       else if (k >= ' ' && !k.startsWith('\x1b')) { capture.buf += k; draw(); }
+      return;
+    }
+    // (1b) inline title-rename owns every key while active
+    if (renaming) {
+      if (k === '\r' || k === '\n') { const t = renaming.buf.trim(); const id = renaming.id; renaming = null; if (t) { await boardWrite(['update', id, '--title', t, '--no-sync']); await flushSync(); } else draw(); }
+      else if (k === '\x1b') { renaming = null; draw(); }                                   // Esc — cancel, keep old title
+      else if (k === '\x7f' || k === '\b') { renaming.buf = renaming.buf.slice(0, -1); draw(); }
+      else if (k === '\x03') { await quit(); }                                              // Ctrl-C
+      else if (k >= ' ' && !k.startsWith('\x1b')) { renaming.buf += k; draw(); }
       return;
     }
     // (2) epic-index filter capture owns every key while typing
@@ -754,6 +771,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
         if (k === '[') { await boardWrite(['update', sel.id, '--priority', String(Math.min(4, (sel.priority ?? 2) + 1)), '--no-sync']); return; }  // less important
         if (k === 't') { const order = ['task', 'feature', 'bug', 'chore']; const next = order[(order.indexOf(sel.kind) + 1) % order.length]; await boardWrite(['update', sel.id, '--type', next, '--no-sync']); return; }
         if (k === 'e') { await editBody(sel.id); return; }
+        if (k === 'r') { renaming = { id: sel.id, buf: sel.title }; draw(); return; }        // inline edit the title
       }
       return;                                                                            // swallow other keys on the board
     }
