@@ -37,9 +37,9 @@
 
 See the commands at the top of this README. After install, all eight skills appear under `/substrate:*`.
 
-### The `substrate` CLI (`substrate tasks`)
+### The `substrate` CLI (`substrate tasks`, `substrate ui`)
 
-Alongside the `/substrate:*` skills, substrate ships a small shell CLI. Today it's `substrate tasks` — a live terminal view of your project's bead DAG (waves, blockers, status, updating as a fleet works). It's a self-locating binary you link onto your PATH once.
+Alongside the `/substrate:*` skills, substrate ships a small shell CLI: `substrate tasks` — a live terminal view of your project's bead DAG (waves, blockers, status, updating as a fleet works) — and `substrate ui` — a one-window tmux workspace (board / specs / interactive-agent windows on substrate's **own** tmux server socket, so your personal tmux config is untouched; `M-1..M-3` jump between windows, `M-n` opens a new agent window, `prefix d` detaches and the session persists). It's a self-locating binary you link onto your PATH once.
 
 The marketplace-installed plugin lives in a **version-keyed cache directory that changes on every update**, so link the CLI from a stable git clone instead:
 
@@ -53,6 +53,7 @@ Then, from inside any substrate/adopted project:
 ```bash
 substrate tasks                            # live bead TUI; reads tbd from your current dir
 substrate tasks --tbd <epic-slug>          # pin one epic   ·   --once renders once and exits
+substrate ui                               # one-window tmux workspace: board · specs · agent
 ```
 
 Notes:

@@ -28,6 +28,9 @@ case "$sub" in
   tasks)
     exec "$root/references/docs-core/docs/scripts/bead-tui.sh" "$@"
     ;;
+  ui)
+    exec "$root/scripts/substrate-ui.sh" "$@"
+    ;;
   ""|-h|--help|help)
     cat <<'EOF'
 substrate — substrate tooling CLI
@@ -35,10 +38,14 @@ substrate — substrate tooling CLI
 usage:
   substrate tasks [--tbd <slug>] [--fixture <path>] [--once]
       live bead TUI for the project in your current directory
+  substrate ui
+      one-window tmux workspace for the project in your current directory
+      (board / specs / agent windows on substrate's own tmux server;
+       M-1..M-3 jump, M-n new agent window, prefix-d detach)
 EOF
     ;;
   *)
-    echo "substrate: unknown command '$sub' (try: substrate tasks)" >&2
+    echo "substrate: unknown command '$sub' (try: substrate tasks, substrate ui)" >&2
     exit 2
     ;;
 esac
