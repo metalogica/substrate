@@ -10,7 +10,7 @@
 //   node watch.mjs --list-views          # print discovered views, exit
 //
 // Nav (interactive TTY only) — views are a FIXED two, lateral switching only:
-//   Planning · Epics   ·   Tab / Shift-Tab or 1–2 to switch · q quit.
+//   Planning · Epics   ·   Tab / Shift-Tab or 1–2 to switch · Esc backs out / exits · Ctrl-C quits.
 // (Orphan/closed beads aren't surfaced — use the tbd CLI directly for those.)
 // Epics is a drill target, not a flat tab-per-epic: it lists every active epic (newest first),
 // and → / Enter drills into one epic's beads (← / Esc pops back). Arrows are HIERARCHICAL
@@ -296,10 +296,10 @@ function render(graph, meta, deltas) {
     if (meta.breadcrumb) bits.push('←/Esc back');
     if (meta.selectedId) bits.push('↑↓ select · Enter details');
     if (meta.views.length > 1) bits.push('Tab/1-2 view');
-    bits.push('? help · q quit');
+    bits.push('? help');
     nav = ` ${C.dim}· ${bits.join(' · ')}${C.reset}`;
   } else if (meta.views.length > 1) {
-    nav = `${C.dim} · Tab/1-2 view · q quit${C.reset}`;
+    nav = `${C.dim} · Tab/1-2 view${C.reset}`;
   }
   lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
@@ -434,7 +434,7 @@ function renderBoard(meta) {
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  const nav = meta.interactive ? ` ${C.dim}· Tab/1-2 view · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
+  const nav = meta.interactive ? ` ${C.dim}· Tab/1-2 view · ↑↓ select · n new · ? help · Esc exit${C.reset}` : '';
   lines.push(`${C.bold}unfiled tasks${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
@@ -522,7 +522,7 @@ function renderEpicList(meta) {
   }
   lines.push('');
   if (epicFiltering) lines.push(`${C.in_progress}▶ filter:${C.reset} ${C.title}${epicFilter}${C.reset}▌`);
-  lines.push(`${C.dim}→/Enter open · / filter · Esc clear · Tab/1-2 switch view${C.reset}`);
+  lines.push(`${C.dim}→/Enter open · / filter · Esc clear/exit · Tab/1-2 switch view${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
 
@@ -531,7 +531,7 @@ function renderHelp(meta) {
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  lines.push(`${C.bold}keyboard reference${C.reset}   ${C.dim}any key to close · q quit${C.reset}`);
+  lines.push(`${C.bold}keyboard reference${C.reset}   ${C.dim}any key to close${C.reset}`);
   lines.push('');
   const row = (k, d) => lines.push(`  ${C.title}${k.padEnd(16)}${C.reset}${C.dim}${d}${C.reset}`);
   const head = (t) => lines.push(`${C.dim}── ${t} ${'─'.repeat(Math.max(0, 38 - t.length))}${C.reset}`);
@@ -539,7 +539,8 @@ function renderHelp(meta) {
   row('1 – 2', 'jump to Planning · Epics');
   row('Tab  Shift-Tab', 'next / previous view');
   row('?', 'toggle this help');
-  row('q  Ctrl-C', 'quit (flushes pending sync)');
+  row('Esc', 'back out one level; from the top level, exit (flushes pending sync)');
+  row('Ctrl-C', 'quit immediately (no flush)');
   lines.push('');
   head('planning · unfiled tasks');
   row('↑ ↓  j k', 'move cursor');
@@ -611,7 +612,7 @@ const orderedIds = (graph) => analyze(graph).waves.flat().slice(0, MAX_NODES);
 
 // Detail overlay for one bead (tbd show), rendered instead of the list when `detail` is set.
 function detailPane(b) {
-  if (!b || !Object.keys(b).length) return `\n${C.blocked}could not load bead.${C.reset}\n\n${C.dim}Esc back · q quit${C.reset}`;
+  if (!b || !Object.keys(b).length) return `\n${C.blocked}could not load bead.${C.reset}\n\n${C.dim}Esc back${C.reset}`;
   const g = GLYPH[b.status] || GLYPH.open, col = C[b.status] || C.open;
   const fmtTs = (s) => s ? String(s).slice(0, 16).replace('T', ' ') : '?';
   const wrap = (s, w) => {
@@ -633,7 +634,7 @@ function detailPane(b) {
   lines.push(`${C.dim}created ${fmtTs(b.created_at)} · updated ${fmtTs(b.updated_at)}${C.reset}`);
   if (b.description) { lines.push(''); for (const l of wrap(b.description, 76)) lines.push(l); }
   lines.push('');
-  lines.push(`${C.dim}Esc back · q quit${C.reset}`);
+  lines.push(`${C.dim}Esc back${C.reset}`);
   return lines.join('\n');
 }
 
@@ -734,7 +735,8 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
   const drillOut = () => { drillSlug = null; selected = 0; scrollTop = 0; draw(); };         // epic beads → back to the index
   const move = (d) => { selected += d; draw(); };            // draw() clamps to the current list
   const halfPage = () => Math.max(1, Math.floor((process.stdout.rows || 40) / 2));
-  const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };
+  const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };   // graceful (Esc from top level): flush pending tbd-sync
+  const quitFast = () => { restore(); process.stdout.write('\n'); process.exit(0); };                          // Ctrl-C: immediate, skip the (possibly slow) sync flush
   const openDetail = async (id) => { if (!id) return; detailLoading = true; draw(); detail = await tshow(id); detailLoading = false; draw(); };
   // A single stdin 'data' event can batch several keystrokes (fast typing, key-repeat, paste) —
   // e.g. tapping j quickly arrives as one 'jjj' chunk, and an exact `k === 'j'` test then fails.
@@ -756,7 +758,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
     if (capture) {
       if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; capture.pos = 0; draw(); }
       else if (k === '\x1b') { capture = null; await flushSync(); draw(); }               // Esc — exit + flush
-      else if (k === '\x03') { await quit(); }                                            // Ctrl-C
+      else if (k === '\x03') { quitFast(); }                                            // Ctrl-C
       else if (lineEdit(capture, k)) { draw(); }                                          // arrows / Home-End / word / insert-delete
       return;
     }
@@ -764,7 +766,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
     if (renaming) {
       if (k === '\r' || k === '\n') { const t = renaming.buf.trim(); const id = renaming.id; renaming = null; if (t) { await boardWrite(['update', id, '--title', t, '--no-sync']); await flushSync(); } else draw(); }
       else if (k === '\x1b') { renaming = null; draw(); }                                   // Esc — cancel, keep old title
-      else if (k === '\x03') { await quit(); }                                              // Ctrl-C
+      else if (k === '\x03') { quitFast(); }                                              // Ctrl-C
       else if (lineEdit(renaming, k)) { draw(); }                                           // arrows / Home-End / word / insert-delete
       return;
     }
@@ -773,11 +775,11 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === '\r' || k === '\n') { epicFiltering = false; draw(); }                    // Enter — keep the narrowing, stop typing
       else if (k === '\x1b') { epicFiltering = false; epicFilter = ''; epicCursor = 0; draw(); }  // Esc — clear
       else if (k === '\x7f' || k === '\b') { epicFilter = epicFilter.slice(0, -1); epicCursor = 0; draw(); }
-      else if (k === '\x03') { await quit(); }                                            // Ctrl-C
+      else if (k === '\x03') { quitFast(); }                                            // Ctrl-C
       else if (k >= ' ' && !k.startsWith('\x1b')) { epicFilter += k; epicCursor = 0; draw(); }
       return;
     }
-    if (k === 'q' || k === '\x03') { await quit(); return; }                              // global quit (flushes)
+    if (k === '\x03') { quitFast(); return; }                                             // Ctrl-C — immediate exit (no flush)
     if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } return; } // modal: Esc closes
     if (showHelp) { showHelp = false; draw(); return; }                                   // any key closes help
     if (k === '?') { showHelp = true; draw(); return; }
@@ -790,6 +792,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
     if (view.type === 'board') {
       const { flat } = boardRows();
       const sel = flat[boardCursor];
+      if (k === '\x1b') { await quit(); return; }             // Esc at the top level — graceful exit (flushes)
       if (k === '\x1b[A' || k === 'k') { boardCursor = Math.max(0, boardCursor - 1); draw(); return; }
       if (k === '\x1b[B' || k === 'j') { boardCursor = Math.min(Math.max(0, flat.length - 1), boardCursor + 1); draw(); return; }
       if (k === 'g') { boardCursor = 0; draw(); return; }
@@ -818,7 +821,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === 'g') { epicCursor = 0; draw(); return; }
       if (k === 'G') { epicCursor = Math.max(0, epics.length - 1); draw(); return; }
       if (k === '/') { epicFiltering = true; draw(); return; }
-      if (k === '\x1b') { if (epicFilter) { epicFilter = ''; epicCursor = 0; draw(); } return; }   // Esc clears a standing filter
+      if (k === '\x1b') { if (epicFilter) { epicFilter = ''; epicCursor = 0; draw(); } else { await quit(); } return; }   // Esc clears a standing filter, else graceful exit
       if (k === 'l' || k === '\x1b[C' || k === '\r' || k === '\n') { if (epics[epicCursor]) drillInto(epics[epicCursor].slug); return; }  // → drill in
       return;                                                                            // swallow other keys on the index
     }
