@@ -289,7 +289,9 @@ function render(graph, meta, deltas) {
   }
   lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
-  if (!graph.nodes.length) { lines.push(`${C.dim}(no beads)${C.reset}`); return lines.join('\n'); }
+  const headerLines = lines.length;             // sticky top rows: tab bar + epic title, pinned on clip
+  let cursorLine = -1;                           // body index of the ↑/↓-selected bead, for scroll-to-cursor
+  if (!graph.nodes.length) { lines.push(`${C.dim}(no beads)${C.reset}`); return { lines, headerLines, cursorLine }; }
   let emitted = 0;
   let remainingWavesCount = 0;
   for (let w = 0; w < waves.length; w++) {
@@ -311,6 +313,7 @@ function render(graph, meta, deltas) {
       if (deltas.appeared.has(id)) tag = `  ${C.in_progress}← NEW${C.reset}`;
       else if (deltas.doneNow.has(id)) tag = `  ${C.closed}✓ done${C.reset}`;
       const sel = id === meta.selectedId;
+      if (sel) cursorLine = lines.length;                 // remember where the cursor landed for scroll-to-cursor
       const cursor = sel ? `${C.rev}▸${C.unrev}` : ' ';
       const title = sel ? `${C.rev}${n.title}${C.unrev}` : `${C.title}${n.title}${C.reset}`;
       lines.push(` ${C.dim}${branch}${C.reset}${cursor}${C[gs]}${GLYPH[gs]} ${id}${C.reset}  ${title}${from}${tag}`);
@@ -323,7 +326,40 @@ function render(graph, meta, deltas) {
   lines.push(`${C.closed}✓ closed${C.reset}   ${C.in_progress}▶ in_progress${C.reset}   ${C.open}○ open${C.reset}   ${C.blocked}⊘ blocked${C.reset}`);
   lines.push(`${C.dim}waves: ${waves.map((w) => w.length).join(' → ')}   (${graph.nodes.length} beads)${C.reset}`);
   for (const l of orchestrationPane(meta.partition)) lines.push(l);
-  return lines.join('\n');
+  return { lines, headerLines, cursorLine };
+}
+
+// Clip a rendered frame to the terminal height: the header (tab bar + epic title) is pinned to
+// the top, and the body scrolls so the ↑/↓-selected bead stays visible (j/k drive it). Returns the
+// full frame unchanged when it already fits. Non-interactive (--once) callers skip this entirely.
+//
+// Budgeting is by VISUAL rows, not logical lines: a long bead title soft-wraps across several
+// terminal rows, so counting one row per line under-counts and the header scrolls off. We strip
+// ANSI colour codes to measure display width and divide by the terminal columns to get each line's
+// wrapped height.
+const ANSI = /\x1b\[[0-9;]*m/g;
+function clipToViewport({ lines, headerLines, cursorLine }) {
+  const rows = process.stdout.rows || 40;
+  const cols = process.stdout.columns || 80;
+  const cost = (s) => Math.max(1, Math.ceil((s.replace(ANSI, '').length || 1) / cols));   // wrapped terminal-row height
+  const total = lines.reduce((n, l) => n + cost(l), 0);
+  if (total <= rows) { scrollTop = 0; return lines.join('\n'); }                           // whole frame fits — no clip
+  const header = lines.slice(0, headerLines);
+  const body = lines.slice(headerLines);
+  const bodyCost = body.map(cost);
+  const headerCost = header.reduce((n, l) => n + cost(l), 0);
+  const budget = Math.max(1, rows - headerCost - 2);        // reserve the indicator row + one blank so the trailing \n never scrolls
+  const cur = cursorLine >= 0 ? Math.min(cursorLine - headerLines, body.length - 1) : 0;
+  // Keep a persistent scroll offset and nudge it just enough to hold the cursor in view.
+  scrollTop = Math.max(0, Math.min(scrollTop, body.length - 1));
+  if (cur < scrollTop) scrollTop = cur;
+  const fits = (start) => { let c = 0; for (let i = start; i <= cur; i++) c += bodyCost[i]; return c <= budget; };
+  while (scrollTop < cur && !fits(scrollTop)) scrollTop++;
+  const win = []; let used = 0, i = scrollTop;
+  for (; i < body.length; i++) { if (used + bodyCost[i] > budget) break; used += bodyCost[i]; win.push(body[i]); }
+  const above = scrollTop, below = body.length - i;
+  const bar = `${C.dim}… ${above} above · ${below} below · j/k scroll${C.reset}`;
+  return [...header, ...win, bar].join('\n');
 }
 
 // ---- liveness helpers -------------------------------------------------------
@@ -336,7 +372,8 @@ const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.
 
 // ---- terminal / input -------------------------------------------------------
 let raw = false;
-function restore() { try { if (raw) process.stdin.setRawMode(false); process.stdout.write('\x1b[?25h'); } catch { /* noop */ } }
+let alt = false;                            // true once we've entered the alternate screen buffer
+function restore() { try { if (raw) process.stdin.setRawMode(false); if (alt) process.stdout.write('\x1b[?1049l'); process.stdout.write('\x1b[?25h'); } catch { /* noop */ } }
 process.on('exit', restore);
 ['SIGINT', 'SIGTERM'].forEach((s) => process.on(s, () => { restore(); process.stdout.write('\n'); process.exit(0); }));
 
@@ -345,6 +382,7 @@ let active = 0;
 let updates = 0;
 let frame = 0;
 let selected = 0;                           // bead cursor within the active view (interactive TTY only)
+let scrollTop = 0;                           // body scroll offset (logical body-line index) for the viewport clip
 let detail = null;                          // opened bead detail object (tbd show), or null for list mode
 let detailLoading = false;                  // Enter pressed, tbd show in flight
 const prevStatus = new Map();               // view.key → Map(id→status), drives NEW/done deltas
@@ -401,7 +439,8 @@ function draw() {
   else {
     const partition = partitionForView(view);
     const selectedId = interactive && order.length ? order[selected] : null;
-    out = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition, selectedId, interactive }, { appeared, doneNow });
+    const r = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition, selectedId, interactive }, { appeared, doneNow });
+    out = ONCE ? r.lines.join('\n') : clipToViewport(r);   // --once dumps the full frame; interactive clips to the viewport
   }
   process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);
   frame++;
@@ -415,7 +454,7 @@ if (LIST_VIEWS) { process.stdout.write(VIEWS.map((v) => v.key).join('\n') + '\n'
 if (ONCE) { draw(); process.exit(0); }
 
 // interactive
-process.stdout.write('\x1b[?25l');
+process.stdout.write('\x1b[?1049h\x1b[?25l'); alt = true;   // alternate screen buffer: fixed viewport, no scrollback debris
 draw();
 let lastContentSig = contentSig();
 let lastIdSig = idSignature();
@@ -423,13 +462,18 @@ let lastMtime = sourceMtime(VIEWS[active]);
 
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
-  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); selected = 0; detail = null; draw(); };
+  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); selected = 0; scrollTop = 0; detail = null; draw(); };
   const move = (d) => { selected += d; draw(); };            // draw() clamps to the current list
+  const halfPage = () => Math.max(1, Math.floor((process.stdout.rows || 40) / 2));
   process.stdin.on('data', async (k) => {
     if (k === 'q' || k === '\x03') { restore(); process.stdout.write('\n'); process.exit(0); }  // global quit
     else if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } }           // modal: Esc closes
     else if (k === '\x1b[A' || k === 'k') move(-1);          // ↑ / k
     else if (k === '\x1b[B' || k === 'j') move(+1);          // ↓ / j
+    else if (k === '\x04') move(+halfPage());                // Ctrl-D · half-page down
+    else if (k === '\x15') move(-halfPage());                // Ctrl-U · half-page up
+    else if (k === 'g') { selected = 0; draw(); }            // g · jump to top
+    else if (k === 'G') { selected = Number.MAX_SAFE_INTEGER; draw(); }  // G · jump to bottom (draw clamps)
     else if (k === '\r' || k === '\n') {                     // Enter → open bead detail
       const view = VIEWS[active];
       if (view.type === 'fixture') return;                  // fixture ids aren't real tbd beads
@@ -441,6 +485,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
     else if (k === '\t' || k === '\x1b[C') nav(+1);          // Tab / →
     else if (k === '\x1b[Z' || k === '\x1b[D') nav(-1);      // Shift-Tab / ←
   });
+  process.stdout.on('resize', () => draw());                 // re-clip the viewport to the new terminal height
 }
 
 // self-paced async poll — fetches in the background; redraws only on change

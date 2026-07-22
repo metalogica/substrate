@@ -24,6 +24,9 @@ docs/scripts/bead-tui.sh --list-views    # print discovered views, exit
 ```
 
 Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **q / Ctrl-C** quit.
+The header (tab bar + epic title) stays pinned to the top; when the list is taller than the
+terminal, the body scrolls to keep the cursor visible: **j/k** (or **↑/↓**) move · **Ctrl-D/Ctrl-U**
+half-page · **g/G** top/bottom · **Enter** bead details · **Esc** back.
 Flags: `--tbd <slug>`, `--fixture <path>`, `--once`, `--list-views`, `--interval <ms>` (idle gap
 between polls, default 800).
 
