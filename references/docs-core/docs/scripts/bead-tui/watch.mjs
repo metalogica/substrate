@@ -9,8 +9,11 @@
 //   node watch.mjs --once                # render the default view once, exit (CI)
 //   node watch.mjs --list-views          # print discovered views, exit
 //
-// Tabs (interactive TTY only): Tab / →  next · Shift-Tab / ←  prev · q / Ctrl-C quit.
-// Views = one per epic (newest first) + an "unassigned" tab (beads with no epic: label).
+// Nav (interactive TTY only) — views are a FIXED four, lateral switching only:
+//   Planning · Epics · Unassigned · Completed   ·   Tab / Shift-Tab or 1–4 to switch · q quit.
+// Epics is a drill target, not a flat tab-per-epic: it lists every active epic (newest first),
+// and → / Enter drills into one epic's beads (← / Esc pops back). Arrows are HIERARCHICAL
+// (drill in/out), never lateral. `/` fuzzy-filters the epic index.
 // Topology is Kahn's waves (as bead-graph.sh computes); `blocked` is derived (an open
 // bead with an unclosed blocker). Rendering is top-to-bottom waves + inline ← blockers.
 //
@@ -127,11 +130,15 @@ async function resolveViews() {
   }
   if (await tbdAvailable()) {
     await refreshSnapshot(); await refreshMembership();
-    const views = [{ key: 'board', type: 'board' }];                    // manual capture/triage board, pinned first
-    views.push(...MEMBERSHIP.epics.map((e) => ({ key: `epic:${e.slug}`, type: 'epic', slug: e.slug })));
-    if (MEMBERSHIP.unassigned.size) views.push({ key: 'unassigned', type: 'unassigned' });
-    if (MEMBERSHIP.completed.size) views.push({ key: 'completed', type: 'completed' });
-    return views;
+    // A FIXED four-view top nav (stable 1–4 positions). Epics is a drill container, not one
+    // tab per epic — so the row can never overflow. Unassigned/Completed stay present even when
+    // empty so their positions (and the number keys) never shift under the user.
+    return [
+      { key: 'planning', label: 'Planning', type: 'board' },
+      { key: 'epics', label: 'Epics', type: 'epics' },
+      { key: 'unassigned', label: 'Unassigned', type: 'unassigned' },
+      { key: 'completed', label: 'Completed', type: 'completed' },
+    ];
   }
   return [{ key: `fixture:${basename(DEFAULT_FIXTURE)}`, type: 'fixture', path: DEFAULT_FIXTURE }];
 }
@@ -250,7 +257,7 @@ const shortId = (id) => id.replace(/^[^-]+-/, '');    // drop the tbd prefix, wh
 
 function tabBar(views, active) {
   if (views.length < 2) return '';
-  return views.map((v, i) => (i === active ? `${C.rev} ${v.key} ${C.unrev}` : `${C.dim} ${v.key} ${C.reset}`)).join(' ');
+  return views.map((v, i) => { const t = v.label || v.key; return i === active ? `${C.rev} ${t} ${C.unrev}` : `${C.dim} ${t} ${C.reset}`; }).join(' ');
 }
 
 // Orchestration pane — the run's flow + each context-budget window as a lane of live status.
@@ -278,16 +285,17 @@ function render(graph, meta, deltas) {
   const lines = [];
   lines.push('');
   const bar = tabBar(meta.views, meta.active);
-  if (bar) { lines.push(bar); lines.push(''); }
+  if (bar) { lines.push(bar); if (meta.breadcrumb) lines.push(`${C.dim}${meta.breadcrumb}${C.reset}`); lines.push(''); }
   let nav = '';
   if (meta.interactive) {
     const bits = [];
-    if (meta.views.length > 1) bits.push('Tab/→ ←/Shift-Tab');
+    if (meta.breadcrumb) bits.push('←/Esc back');
     if (meta.selectedId) bits.push('↑↓ select · Enter details');
-    bits.push('q quit');
+    if (meta.views.length > 1) bits.push('Tab/1-4 view');
+    bits.push('? help · q quit');
     nav = ` ${C.dim}· ${bits.join(' · ')}${C.reset}`;
   } else if (meta.views.length > 1) {
-    nav = `${C.dim} · Tab/→ ←/Shift-Tab · q quit${C.reset}`;
+    nav = `${C.dim} · Tab/1-4 view · q quit${C.reset}`;
   }
   lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
@@ -388,7 +396,7 @@ function renderBoard(meta) {
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  const nav = meta.interactive ? ` ${C.dim}· Tab/→ tabs · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
+  const nav = meta.interactive ? ` ${C.dim}· Tab/1-4 view · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
   lines.push(`${C.bold}unfiled tasks${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
@@ -418,6 +426,67 @@ function renderBoard(meta) {
   return { lines, headerLines, cursorLine };
 }
 
+// ---- epics: the index (a drill target, not a tab-per-epic) ------------------
+//   One row per active epic with a progress strip (done → in-progress → open) and a done/total
+//   count, sorted newest-first (MEMBERSHIP order). `/` fuzzy-filters by slug. →/Enter drills into
+//   an epic's beads, which render through the ordinary wave view under an `Epics › slug` breadcrumb.
+const PROG = { closed: '●', in_progress: '◐', open: '○', blocked: '○' };
+function epicStats(slug) {
+  const ids = [...(MEMBERSHIP?.memberIds.get(slug) || [])];
+  const rows = ids.map((id) => SNAP?.rows.get(id)).filter(Boolean);
+  return { total: rows.length, done: rows.filter((r) => r.status === 'closed').length, rows };
+}
+function epicStrip(rows, cap = 12) {
+  const rank = { closed: 0, in_progress: 1, open: 2, blocked: 2 };
+  const sorted = [...rows].sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2));
+  const strip = sorted.slice(0, cap).map((r) => {
+    const gs = r.status === 'closed' ? 'closed' : r.status === 'in_progress' ? 'in_progress' : 'open';
+    return `${C[gs]}${PROG[gs]}${C.reset}`;
+  }).join('');
+  return rows.length > cap ? `${strip} ${C.dim}+${rows.length - cap}${C.reset}` : strip;
+}
+function epicsFiltered() {
+  const epics = MEMBERSHIP?.epics || [];
+  const q = epicFilter.trim().toLowerCase();
+  return q ? epics.filter((e) => e.slug.toLowerCase().includes(q)) : epics;
+}
+
+function renderEpicList(meta) {
+  const spin = ['⟳', '⟲'][meta.frame % 2];
+  const epics = epicsFiltered();
+  epicCursor = Math.max(0, Math.min(epics.length ? epics.length - 1 : 0, epicCursor));
+  const lines = [''];
+  const bar = tabBar(meta.views, meta.active);
+  if (bar) {
+    lines.push(bar);
+    lines.push(`${C.dim}Epics › ${epicFilter ? `${C.in_progress}/${epicFilter}${C.reset}` : '(all)'}${C.reset}`);
+    lines.push('');
+  }
+  const nav = meta.interactive ? ` ${C.dim}· ↑↓ move · →/Enter open · / filter · Tab/1-4 view · ? help${C.reset}` : '';
+  lines.push(`${C.bold}epics${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'} · ${epics.length} epic${epics.length === 1 ? '' : 's'}${C.reset}${nav}`);
+  lines.push('');
+  const headerLines = lines.length;
+  let cursorLine = -1;
+  if (!epics.length) lines.push(`${C.dim}(${epicFilter ? `no epics match "${epicFilter}"` : 'no active epics'})${C.reset}`);
+  let shown = 0;
+  for (let i = 0; i < epics.length; i++) {
+    if (shown >= MAX_NODES) { lines.push(`${C.dim}   … +${epics.length - shown} more — raise with --max${C.reset}`); break; }
+    shown++;
+    const e = epics[i];
+    const { total, done, rows } = epicStats(e.slug);
+    const sel = i === epicCursor;
+    if (sel) cursorLine = lines.length;
+    const cur = sel ? `${C.rev}▸${C.unrev}` : ' ';
+    const pad = ' '.repeat(Math.max(1, 28 - e.slug.length));
+    const name = sel ? `${C.rev}${e.slug}${C.unrev}` : `${C.title}${e.slug}${C.reset}`;
+    lines.push(` ${cur}${name}${pad}${epicStrip(rows)}  ${C.dim}${done}/${total}${C.reset}`);
+  }
+  lines.push('');
+  if (epicFiltering) lines.push(`${C.in_progress}▶ filter:${C.reset} ${C.title}${epicFilter}${C.reset}▌`);
+  lines.push(`${C.dim}→/Enter open · / filter · Esc clear · Tab/1-4 switch view${C.reset}`);
+  return { lines, headerLines, cursorLine };
+}
+
 // Full keyboard reference — toggled with `?` from any view (rendered instead of the list).
 function renderHelp(meta) {
   const lines = [''];
@@ -427,13 +496,13 @@ function renderHelp(meta) {
   lines.push('');
   const row = (k, d) => lines.push(`  ${C.title}${k.padEnd(16)}${C.reset}${C.dim}${d}${C.reset}`);
   const head = (t) => lines.push(`${C.dim}── ${t} ${'─'.repeat(Math.max(0, 38 - t.length))}${C.reset}`);
-  head('global');
-  row('Tab  →', 'next tab');
-  row('Shift-Tab  ←', 'previous tab');
+  head('global · switch view (lateral)');
+  row('1 – 4', 'jump to Planning · Epics · Unassigned · Completed');
+  row('Tab  Shift-Tab', 'next / previous view');
   row('?', 'toggle this help');
   row('q  Ctrl-C', 'quit (flushes pending sync)');
   lines.push('');
-  head('board · unfiled tasks');
+  head('planning · unfiled tasks');
   row('↑ ↓  j k', 'move cursor');
   row('n', 'new task — type title, Enter commits (stays), Esc exits');
   row('Enter', 'open bead detail');
@@ -444,14 +513,20 @@ function renderHelp(meta) {
   row('t', 'cycle kind (task → feature → bug → chore)');
   row('g  G', 'top / bottom');
   lines.push('');
-  head('epic / unassigned / completed (wave views)');
+  head('epics · the index');
   row('↑ ↓  j k', 'move cursor');
-  row('Enter', 'open bead detail');
+  row('→  l  Enter', 'open the highlighted epic (drill in)');
+  row('/', 'filter epics by name · Esc clears');
+  row('g  G', 'top / bottom');
+  lines.push('');
+  head('epic beads · unassigned · completed');
+  row('↑ ↓  j k', 'move cursor');
+  row('←  h  Esc', 'back to the epic index (drill out)');
+  row('Enter  →  l', 'open bead detail');
   row('Ctrl-D  Ctrl-U', 'half-page down / up');
   row('g  G', 'top / bottom');
-  row('Tab  ← →', 'switch tabs');
   lines.push('');
-  lines.push(`${C.dim}the board is a manual staging surface — it never writes into an epic${C.reset}`);
+  lines.push(`${C.dim}arrows are hierarchical (drill in/out); views switch with Tab or 1–4. planning never writes into an epic.${C.reset}`);
   return lines.join('\n');
 }
 
@@ -461,7 +536,7 @@ function sourceMtime(view) {   // fixture views only; tbd views are content-poll
   try { return statSync(view.path).mtimeMs; } catch { return 0; }
 }
 const statusMap = (graph) => new Map(graph.nodes.map((n) => [n.id, n.status]));
-const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'board' ? 'unfiled tasks (board)' : view.type === 'unassigned' ? 'unassigned beads' : view.type === 'completed' ? 'completed beads' : `epic:${view.slug}`;
+const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'board' ? 'unfiled tasks (board)' : view.type === 'epics' ? 'epics' : view.type === 'unassigned' ? 'unassigned beads' : view.type === 'completed' ? 'completed beads' : `epic:${view.slug}`;
 
 // ---- terminal / input -------------------------------------------------------
 let raw = false;
@@ -482,6 +557,10 @@ let boardCursor = 0;                        // selected row within the board's f
 let capture = null;                         // { buf } while capturing a new task title; null otherwise
 let dirty = false;                          // pending --no-sync board writes awaiting a flush
 let showHelp = false;                       // ? overlay: full keyboard reference
+let epicCursor = 0;                         // selected row within the epics index
+let drillSlug = null;                       // when in the Epics view: null = index, slug = drilled into that epic's beads
+let epicFilter = '';                        // active substring narrowing the epics index (persists across visits within a session)
+let epicFiltering = false;                  // true while typing into the epic filter (owns every key, like capture)
 const prevStatus = new Map();               // view.key → Map(id→status), drives NEW/done deltas
 
 // Beads in the exact order render() emits them (Kahn waves, capped at MAX_NODES), so the
@@ -529,21 +608,29 @@ function draw() {
   } else if (view.type === 'board') {
     const r = renderBoard({ views: VIEWS, active, frame, updates, interactive });
     out = ONCE ? r.lines.join('\n') : clipToViewport(r);
+  } else if (view.type === 'epics' && drillSlug === null) {
+    const r = renderEpicList({ views: VIEWS, active, frame, updates, interactive });
+    out = ONCE ? r.lines.join('\n') : clipToViewport(r);
   } else {
-    const graph = graphForView(view);
+    // Generic wave path — unassigned / completed / fixture / pinned epic, and the Epics view once
+    // drilled into a slug (rendered as an ordinary epic under a breadcrumb).
+    const isLeaf = view.type === 'epics';
+    const effView = isLeaf ? { type: 'epic', slug: drillSlug, key: `epic:${drillSlug}` } : view;
+    const graph = graphForView(effView);
     const cur = statusMap(graph);
-    const prev = prevStatus.get(view.key);
+    const prev = prevStatus.get(effView.key);
     const appeared = new Set(), doneNow = new Set();
     if (prev) for (const [id, st] of cur) {
       if (!prev.has(id)) appeared.add(id);
       else if (st === 'closed' && prev.get(id) !== 'closed') doneNow.add(id);
     }
-    prevStatus.set(view.key, cur);
+    prevStatus.set(effView.key, cur);
     const order = orderedIds(graph);
     selected = Math.min(Math.max(0, selected), Math.max(0, order.length - 1));   // clamp to current list
-    const partition = partitionForView(view);
+    const partition = partitionForView(effView);
     const selectedId = interactive && order.length ? order[selected] : null;
-    const r = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition, selectedId, interactive }, { appeared, doneNow });
+    const breadcrumb = isLeaf ? `Epics › ${drillSlug}` : '';
+    const r = render(graph, { title: isLeaf ? `epic:${drillSlug}` : titleOf(view), breadcrumb, views: VIEWS, active, frame, updates, partition, selectedId, interactive }, { appeared, doneNow });
     out = ONCE ? r.lines.join('\n') : clipToViewport(r);   // --once dumps the full frame; interactive clips to the viewport
   }
   process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);
@@ -593,7 +680,12 @@ let lastMtime = sourceMtime(VIEWS[active]);
 
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
-  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); selected = 0; scrollTop = 0; boardCursor = 0; detail = null; capture = null; showHelp = false; draw(); };
+  // Lateral view switch (Tab / 1–4) resets ALL per-view cursors, including the epics drill + filter.
+  const resetView = () => { selected = 0; scrollTop = 0; boardCursor = 0; epicCursor = 0; drillSlug = null; detail = null; capture = null; showHelp = false; epicFiltering = false; epicFilter = ''; };
+  const switchView = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); resetView(); draw(); };
+  const jumpView = (i) => { if (i < 0 || i >= VIEWS.length) return; active = i; resetView(); draw(); };
+  const drillInto = (slug) => { drillSlug = slug; selected = 0; scrollTop = 0; draw(); };   // Epics index → one epic's beads
+  const drillOut = () => { drillSlug = null; selected = 0; scrollTop = 0; draw(); };         // epic beads → back to the index
   const move = (d) => { selected += d; draw(); };            // draw() clamps to the current list
   const halfPage = () => Math.max(1, Math.floor((process.stdout.rows || 40) / 2));
   const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };
@@ -608,12 +700,26 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       else if (k >= ' ' && !k.startsWith('\x1b')) { capture.buf += k; draw(); }
       return;
     }
+    // (2) epic-index filter capture owns every key while typing
+    if (epicFiltering) {
+      if (k === '\r' || k === '\n') { epicFiltering = false; draw(); }                    // Enter — keep the narrowing, stop typing
+      else if (k === '\x1b') { epicFiltering = false; epicFilter = ''; epicCursor = 0; draw(); }  // Esc — clear
+      else if (k === '\x7f' || k === '\b') { epicFilter = epicFilter.slice(0, -1); epicCursor = 0; draw(); }
+      else if (k === '\x03') { await quit(); }                                            // Ctrl-C
+      else if (k >= ' ' && !k.startsWith('\x1b')) { epicFilter += k; epicCursor = 0; draw(); }
+      return;
+    }
     if (k === 'q' || k === '\x03') { await quit(); return; }                              // global quit (flushes)
     if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } return; } // modal: Esc closes
     if (showHelp) { showHelp = false; draw(); return; }                                   // any key closes help
     if (k === '?') { showHelp = true; draw(); return; }
-    // (2) board view — capture + triage hotkeys
-    if (VIEWS[active].type === 'board') {
+    // (3) lateral view switching — Tab / Shift-Tab / number keys (full remap: arrows are hierarchical, never lateral)
+    if (k >= '1' && k <= '9') { jumpView(k.charCodeAt(0) - 49); return; }                 // '1' → index 0 …
+    if (k === '\t') { switchView(+1); return; }                                           // Tab · next view
+    if (k === '\x1b[Z') { switchView(-1); return; }                                       // Shift-Tab · previous view
+    const view = VIEWS[active];
+    // (4) planning board — capture + triage hotkeys
+    if (view.type === 'board') {
       const { flat } = boardRows();
       const sel = flat[boardCursor];
       if (k === '\x1b[A' || k === 'k') { boardCursor = Math.max(0, boardCursor - 1); draw(); return; }
@@ -631,24 +737,36 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
         if (k === 't') { const order = ['task', 'feature', 'bug', 'chore']; const next = order[(order.indexOf(sel.kind) + 1) % order.length]; await boardWrite(['update', sel.id, '--type', next, '--no-sync']); return; }
         if (k === 'e') { await editBody(sel.id); return; }
       }
-      if (k === '\t' || k === '\x1b[C') { nav(+1); return; }
-      if (k === '\x1b[Z' || k === '\x1b[D') { nav(-1); return; }
       return;                                                                            // swallow other keys on the board
     }
-    // (3) wave views — cursor / detail / scroll
+    // (5) epics INDEX — scroll the list, filter, drill into one epic
+    if (view.type === 'epics' && drillSlug === null) {
+      const epics = epicsFiltered();
+      if (k === '\x1b[A' || k === 'k') { epicCursor = Math.max(0, epicCursor - 1); draw(); return; }
+      if (k === '\x1b[B' || k === 'j') { epicCursor = Math.min(Math.max(0, epics.length - 1), epicCursor + 1); draw(); return; }
+      if (k === '\x04') { epicCursor = Math.min(Math.max(0, epics.length - 1), epicCursor + halfPage()); draw(); return; }
+      if (k === '\x15') { epicCursor = Math.max(0, epicCursor - halfPage()); draw(); return; }
+      if (k === 'g') { epicCursor = 0; draw(); return; }
+      if (k === 'G') { epicCursor = Math.max(0, epics.length - 1); draw(); return; }
+      if (k === '/') { epicFiltering = true; draw(); return; }
+      if (k === '\x1b') { if (epicFilter) { epicFilter = ''; epicCursor = 0; draw(); } return; }   // Esc clears a standing filter
+      if (k === 'l' || k === '\x1b[C' || k === '\r' || k === '\n') { if (epics[epicCursor]) drillInto(epics[epicCursor].slug); return; }  // → drill in
+      return;                                                                            // swallow other keys on the index
+    }
+    // (6) wave views — epic beads (drilled), unassigned, completed, pinned epic, fixture
+    const isLeaf = view.type === 'epics';
+    if (isLeaf && (k === 'h' || k === '\x1b[D' || k === '\x1b')) { drillOut(); return; }  // ← drill out to the index
     if (k === '\x1b[A' || k === 'k') move(-1);               // ↑ / k
     else if (k === '\x1b[B' || k === 'j') move(+1);          // ↓ / j
     else if (k === '\x04') move(+halfPage());                // Ctrl-D · half-page down
     else if (k === '\x15') move(-halfPage());                // Ctrl-U · half-page up
     else if (k === 'g') { selected = 0; draw(); }            // g · jump to top
     else if (k === 'G') { selected = Number.MAX_SAFE_INTEGER; draw(); }  // G · jump to bottom (draw clamps)
-    else if (k === '\r' || k === '\n') {                     // Enter → open bead detail
-      const view = VIEWS[active];
-      if (view.type === 'fixture') return;                  // fixture ids aren't real tbd beads
-      await openDetail(orderedIds(graphForView(view))[selected]);
+    else if (k === '\r' || k === '\n' || k === 'l' || k === '\x1b[C') {  // Enter / → / l → open bead detail (drill deeper)
+      const ev = isLeaf ? { type: 'epic', slug: drillSlug } : view;
+      if (ev.type === 'fixture') return;                    // fixture ids aren't real tbd beads
+      await openDetail(orderedIds(graphForView(ev))[selected]);
     }
-    else if (k === '\t' || k === '\x1b[C') nav(+1);          // Tab / →
-    else if (k === '\x1b[Z' || k === '\x1b[D') nav(-1);      // Shift-Tab / ←
   });
   process.stdout.on('resize', () => draw());                 // re-clip the viewport to the new terminal height
 }
@@ -672,6 +790,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
             lastIdSig = idSignature(); lastContentSig = contentSig();
             const idx = VIEWS.findIndex((v) => v.key === activeKey);
             active = idx >= 0 ? idx : 0;
+            if (drillSlug && !(MEMBERSHIP?.epics || []).some((e) => e.slug === drillSlug)) drillSlug = null;  // drilled epic went away → back to index
           }
         }
       }
