@@ -9,8 +9,9 @@
 //   node watch.mjs --once                # render the default view once, exit (CI)
 //   node watch.mjs --list-views          # print discovered views, exit
 //
-// Nav (interactive TTY only) — views are a FIXED four, lateral switching only:
-//   Planning · Epics · Unassigned · Completed   ·   Tab / Shift-Tab or 1–4 to switch · q quit.
+// Nav (interactive TTY only) — views are a FIXED two, lateral switching only:
+//   Planning · Epics   ·   Tab / Shift-Tab or 1–2 to switch · q quit.
+// (Orphan/closed beads aren't surfaced — use the tbd CLI directly for those.)
 // Epics is a drill target, not a flat tab-per-epic: it lists every active epic (newest first),
 // and → / Enter drills into one epic's beads (← / Esc pops back). Arrows are HIERARCHICAL
 // (drill in/out), never lateral. `/` fuzzy-filters the epic index.
@@ -130,14 +131,12 @@ async function resolveViews() {
   }
   if (await tbdAvailable()) {
     await refreshSnapshot(); await refreshMembership();
-    // A FIXED four-view top nav (stable 1–4 positions). Epics is a drill container, not one
-    // tab per epic — so the row can never overflow. Unassigned/Completed stay present even when
-    // empty so their positions (and the number keys) never shift under the user.
+    // A FIXED two-view top nav (stable 1–2 positions). Epics is a drill container, not one tab
+    // per epic — so the row can never overflow. Orphan/closed beads aren't surfaced here (use the
+    // tbd CLI directly for those); MEMBERSHIP still tracks them so epic membership stays correct.
     return [
       { key: 'planning', label: 'Planning', type: 'board' },
       { key: 'epics', label: 'Epics', type: 'epics' },
-      { key: 'unassigned', label: 'Unassigned', type: 'unassigned' },
-      { key: 'completed', label: 'Completed', type: 'completed' },
     ];
   }
   return [{ key: `fixture:${basename(DEFAULT_FIXTURE)}`, type: 'fixture', path: DEFAULT_FIXTURE }];
@@ -291,11 +290,11 @@ function render(graph, meta, deltas) {
     const bits = [];
     if (meta.breadcrumb) bits.push('←/Esc back');
     if (meta.selectedId) bits.push('↑↓ select · Enter details');
-    if (meta.views.length > 1) bits.push('Tab/1-4 view');
+    if (meta.views.length > 1) bits.push('Tab/1-2 view');
     bits.push('? help · q quit');
     nav = ` ${C.dim}· ${bits.join(' · ')}${C.reset}`;
   } else if (meta.views.length > 1) {
-    nav = `${C.dim} · Tab/1-4 view · q quit${C.reset}`;
+    nav = `${C.dim} · Tab/1-2 view · q quit${C.reset}`;
   }
   lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
@@ -396,7 +395,7 @@ function renderBoard(meta) {
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  const nav = meta.interactive ? ` ${C.dim}· Tab/1-4 view · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
+  const nav = meta.interactive ? ` ${C.dim}· Tab/1-2 view · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
   lines.push(`${C.bold}unfiled tasks${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
@@ -462,7 +461,7 @@ function renderEpicList(meta) {
     lines.push(`${C.dim}Epics › ${epicFilter ? `${C.in_progress}/${epicFilter}${C.reset}` : '(all)'}${C.reset}`);
     lines.push('');
   }
-  const nav = meta.interactive ? ` ${C.dim}· ↑↓ move · →/Enter open · / filter · Tab/1-4 view · ? help${C.reset}` : '';
+  const nav = meta.interactive ? ` ${C.dim}· ↑↓ move · →/Enter open · / filter · Tab/1-2 view · ? help${C.reset}` : '';
   lines.push(`${C.bold}epics${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'} · ${epics.length} epic${epics.length === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
@@ -483,7 +482,7 @@ function renderEpicList(meta) {
   }
   lines.push('');
   if (epicFiltering) lines.push(`${C.in_progress}▶ filter:${C.reset} ${C.title}${epicFilter}${C.reset}▌`);
-  lines.push(`${C.dim}→/Enter open · / filter · Esc clear · Tab/1-4 switch view${C.reset}`);
+  lines.push(`${C.dim}→/Enter open · / filter · Esc clear · Tab/1-2 switch view${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
 
@@ -497,7 +496,7 @@ function renderHelp(meta) {
   const row = (k, d) => lines.push(`  ${C.title}${k.padEnd(16)}${C.reset}${C.dim}${d}${C.reset}`);
   const head = (t) => lines.push(`${C.dim}── ${t} ${'─'.repeat(Math.max(0, 38 - t.length))}${C.reset}`);
   head('global · switch view (lateral)');
-  row('1 – 4', 'jump to Planning · Epics · Unassigned · Completed');
+  row('1 – 2', 'jump to Planning · Epics');
   row('Tab  Shift-Tab', 'next / previous view');
   row('?', 'toggle this help');
   row('q  Ctrl-C', 'quit (flushes pending sync)');
@@ -519,14 +518,14 @@ function renderHelp(meta) {
   row('/', 'filter epics by name · Esc clears');
   row('g  G', 'top / bottom');
   lines.push('');
-  head('epic beads · unassigned · completed');
+  head('epic beads (drilled in)');
   row('↑ ↓  j k', 'move cursor');
   row('←  h  Esc', 'back to the epic index (drill out)');
   row('Enter  →  l', 'open bead detail');
   row('Ctrl-D  Ctrl-U', 'half-page down / up');
   row('g  G', 'top / bottom');
   lines.push('');
-  lines.push(`${C.dim}arrows are hierarchical (drill in/out); views switch with Tab or 1–4. planning never writes into an epic.${C.reset}`);
+  lines.push(`${C.dim}arrows are hierarchical (drill in/out); views switch with Tab or 1–2. planning never writes into an epic. use the tbd CLI for orphan/closed beads.${C.reset}`);
   return lines.join('\n');
 }
 
@@ -680,7 +679,7 @@ let lastMtime = sourceMtime(VIEWS[active]);
 
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
-  // Lateral view switch (Tab / 1–4) resets ALL per-view cursors, including the epics drill + filter.
+  // Lateral view switch (Tab / 1–2) resets ALL per-view cursors, including the epics drill + filter.
   const resetView = () => { selected = 0; scrollTop = 0; boardCursor = 0; epicCursor = 0; drillSlug = null; detail = null; capture = null; showHelp = false; epicFiltering = false; epicFilter = ''; };
   const switchView = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); resetView(); draw(); };
   const jumpView = (i) => { if (i < 0 || i >= VIEWS.length) return; active = i; resetView(); draw(); };
