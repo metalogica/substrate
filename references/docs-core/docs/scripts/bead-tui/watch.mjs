@@ -574,6 +574,7 @@ async function editBody(id) {
   if (raw) process.stdin.setRawMode(true);
   process.stdout.write('\x1b[?25l');
   await boardWrite(['update', id, '--description', readFileSync(tmp, 'utf8'), '--no-sync']);
+  await flushSync();   // a deliberate body edit must reach the shared tbd-sync store now, not only at a clean quit
 }
 
 // ---- main -------------------------------------------------------------------
