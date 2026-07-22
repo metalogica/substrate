@@ -58,8 +58,11 @@ if ! t has-session -t "=$session" 2>/dev/null; then
   [ -d "$specs_dir" ] || specs_dir="$repo_root"
 
   # Server-birth path: -f applies the substrate conf iff this creates the server.
+  # The board relaunches on exit (Esc/q are one-keystroke exits and a dead window
+  # 0 reads as "no beads"); Ctrl-C during the pause drops to a shell instead.
+  board_cmd="while :; do '$substrate_cli' tasks; printf '\\n[board exited — restarting in 2s · Ctrl-C for a shell]\\n'; sleep 2 || break; done; exec \"\${SHELL:-zsh}\""
   tmux -L "$SOCKET" -f "$conf" new-session -d -s "$session" -c "$repo_root" \
-    -n board "'$substrate_cli' tasks; exec \${SHELL:-zsh}"
+    -n board "$board_cmd"
   # The M-? help popup resolves its file through this (fallback-defaulted in conf).
   t set-environment -g SUBSTRATE_SCRIPTS "$here"
   t new-window -t "$session:1" -n specs -c "$specs_dir"

@@ -4,6 +4,10 @@
 
   windows                          (no prefix needed)
     M-1   board     bead board TUI — capture · groom · queue
+                    tab 1 = unfiled (inbox/groomed ONLY); the full
+                    backlog lives in Planning/Epics (Tab cycles).
+                    Esc/q exits the TUI — it auto-restarts in 2s
+                    (Ctrl-C during the pause = shell instead)
     M-2   specs     shell in docs/tasks/ongoing
     M-3   agent     interactive claude — the sync SDD seat
     M-n   new agent window in the current pane's directory
