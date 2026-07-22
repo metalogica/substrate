@@ -18,11 +18,12 @@
 // runs in parallel — the event loop never blocks, keeping keypresses and the spinner live
 // while data is fetched in the background.
 
-import { readFileSync, statSync } from 'node:fs';
-import { execFile } from 'node:child_process';
+import { readFileSync, writeFileSync, statSync } from 'node:fs';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const pexec = promisify(execFile);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -67,7 +68,7 @@ let SNAP = null;
 async function refreshSnapshot() {
   const [listRows, blocked] = await Promise.all([tlist(['--all']), tblocked()]);
   const rows = new Map();
-  for (const r of listRows) rows.set(r.id, { id: r.id, title: r.title, status: r.status, kind: r.kind, labels: r.labels || [] });
+  for (const r of listRows) rows.set(r.id, { id: r.id, title: r.title, status: r.status, kind: r.kind, priority: r.priority, labels: r.labels || [] });
   const edges = new Map();
   for (const b of blocked) edges.set(b.id, (b.blockedBy || []).map(firstId).filter(Boolean));
   SNAP = { rows, edges };
@@ -126,10 +127,11 @@ async function resolveViews() {
   }
   if (await tbdAvailable()) {
     await refreshSnapshot(); await refreshMembership();
-    const views = MEMBERSHIP.epics.map((e) => ({ key: `epic:${e.slug}`, type: 'epic', slug: e.slug }));
+    const views = [{ key: 'board', type: 'board' }];                    // manual capture/triage board, pinned first
+    views.push(...MEMBERSHIP.epics.map((e) => ({ key: `epic:${e.slug}`, type: 'epic', slug: e.slug })));
     if (MEMBERSHIP.unassigned.size) views.push({ key: 'unassigned', type: 'unassigned' });
     if (MEMBERSHIP.completed.size) views.push({ key: 'completed', type: 'completed' });
-    if (views.length) return views;
+    return views;
   }
   return [{ key: `fixture:${basename(DEFAULT_FIXTURE)}`, type: 'fixture', path: DEFAULT_FIXTURE }];
 }
@@ -362,13 +364,104 @@ function clipToViewport({ lines, headerLines, cursorLine }) {
   return [...header, ...win, bar].join('\n');
 }
 
+// ---- board: flat capture/triage surface (inbox beads, no topology) ----------
+//   Membership = SNAP rows labelled `inbox`, open/in_progress. Two stacked sections:
+//   UNGROOMED (no `groomed` label) then GROOMED. Sorted by priority then id. A manual
+//   staging surface — it never writes into an epic (endogenous-reconfiguration rule).
+//   Returns { lines, headerLines, cursorLine } so it flows through clipToViewport like render().
+function boardRows() {
+  if (!SNAP) return { un: [], gr: [], flat: [] };
+  const onBoard = [...SNAP.rows.values()].filter(
+    (r) => (r.labels || []).includes('inbox') && (r.status === 'open' || r.status === 'in_progress'));
+  const groomed = (r) => (r.labels || []).includes('groomed');
+  const byPri = (a, b) => (a.priority ?? 2) - (b.priority ?? 2) || (a.id < b.id ? -1 : 1);
+  const un = onBoard.filter((r) => !groomed(r)).sort(byPri);
+  const gr = onBoard.filter(groomed).sort(byPri);
+  return { un, gr, flat: [...un, ...gr] };
+}
+
+function renderBoard(meta) {
+  const spin = ['⟳', '⟲'][meta.frame % 2];
+  const { un, gr, flat } = boardRows();
+  boardCursor = Math.max(0, Math.min(flat.length ? flat.length - 1 : 0, boardCursor));
+  const selId = meta.interactive && flat.length ? flat[boardCursor].id : null;
+  const lines = [''];
+  const bar = tabBar(meta.views, meta.active);
+  if (bar) { lines.push(bar); lines.push(''); }
+  const nav = meta.interactive ? ` ${C.dim}· Tab/→ tabs · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
+  lines.push(`${C.bold}unfiled tasks${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
+  lines.push('');
+  const headerLines = lines.length;
+  let cursorLine = -1;
+  if (!flat.length && !capture) lines.push(`${C.dim}(no unfiled tasks — press n to add)${C.reset}`);
+  const section = (label, rows) => {
+    lines.push(`${C.dim}── ${label} · ${rows.length} ${'─'.repeat(Math.max(0, 30 - label.length))}${C.reset}`);
+    let shown = 0;
+    for (const r of rows) {
+      if (shown >= MAX_NODES) { lines.push(`${C.dim}   … +${rows.length - shown} more — raise with --max${C.reset}`); break; }
+      shown++;
+      const gs = r.status === 'in_progress' ? 'in_progress' : 'open';
+      const sel = r.id === selId;
+      if (sel) cursorLine = lines.length;
+      const cur = sel ? `${C.rev}▸${C.unrev}` : ' ';
+      const pri = `${C.dim}P${r.priority ?? 2}${C.reset}`;
+      const kind = `${C.dim}${(r.kind || 'task').padEnd(7)}${C.reset}`;
+      const title = sel ? `${C.rev}${r.title}${C.unrev}` : `${C.title}${r.title}${C.reset}`;
+      lines.push(` ${cur}${C[gs]}${GLYPH[gs]} ${r.id}${C.reset}  ${pri} ${kind} ${title}`);
+    }
+  };
+  section('UNGROOMED', un);
+  section('GROOMED', gr);
+  lines.push('');
+  if (capture) lines.push(`${C.in_progress}▶ new:${C.reset} ${C.title}${capture.buf}${C.reset}▌`);
+  lines.push(`${C.dim}n new · e body · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
+  return { lines, headerLines, cursorLine };
+}
+
+// Full keyboard reference — toggled with `?` from any view (rendered instead of the list).
+function renderHelp(meta) {
+  const lines = [''];
+  const bar = tabBar(meta.views, meta.active);
+  if (bar) { lines.push(bar); lines.push(''); }
+  lines.push(`${C.bold}keyboard reference${C.reset}   ${C.dim}any key to close · q quit${C.reset}`);
+  lines.push('');
+  const row = (k, d) => lines.push(`  ${C.title}${k.padEnd(16)}${C.reset}${C.dim}${d}${C.reset}`);
+  const head = (t) => lines.push(`${C.dim}── ${t} ${'─'.repeat(Math.max(0, 38 - t.length))}${C.reset}`);
+  head('global');
+  row('Tab  →', 'next tab');
+  row('Shift-Tab  ←', 'previous tab');
+  row('?', 'toggle this help');
+  row('q  Ctrl-C', 'quit (flushes pending sync)');
+  lines.push('');
+  head('board · unfiled tasks');
+  row('↑ ↓  j k', 'move cursor');
+  row('n', 'new task — type title, Enter commits (stays), Esc exits');
+  row('Enter', 'open bead detail');
+  row('e', 'edit body in $EDITOR');
+  row('space', 'toggle groomed (ungroomed ↔ groomed)');
+  row('x', 'kill / close selected');
+  row('[  ]', 'priority: less / more important');
+  row('t', 'cycle kind (task → feature → bug → chore)');
+  row('g  G', 'top / bottom');
+  lines.push('');
+  head('epic / unassigned / completed (wave views)');
+  row('↑ ↓  j k', 'move cursor');
+  row('Enter', 'open bead detail');
+  row('Ctrl-D  Ctrl-U', 'half-page down / up');
+  row('g  G', 'top / bottom');
+  row('Tab  ← →', 'switch tabs');
+  lines.push('');
+  lines.push(`${C.dim}the board is a manual staging surface — it never writes into an epic${C.reset}`);
+  return lines.join('\n');
+}
+
 // ---- liveness helpers -------------------------------------------------------
 function sourceMtime(view) {   // fixture views only; tbd views are content-polled
   if (view.type !== 'fixture') return 0;
   try { return statSync(view.path).mtimeMs; } catch { return 0; }
 }
 const statusMap = (graph) => new Map(graph.nodes.map((n) => [n.id, n.status]));
-const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'unassigned' ? 'unassigned beads' : view.type === 'completed' ? 'completed beads' : `epic:${view.slug}`;
+const titleOf = (view) => view.type === 'fixture' ? `fixture · ${basename(view.path)}` : view.type === 'board' ? 'unfiled tasks (board)' : view.type === 'unassigned' ? 'unassigned beads' : view.type === 'completed' ? 'completed beads' : `epic:${view.slug}`;
 
 // ---- terminal / input -------------------------------------------------------
 let raw = false;
@@ -385,6 +478,10 @@ let selected = 0;                           // bead cursor within the active vie
 let scrollTop = 0;                           // body scroll offset (logical body-line index) for the viewport clip
 let detail = null;                          // opened bead detail object (tbd show), or null for list mode
 let detailLoading = false;                  // Enter pressed, tbd show in flight
+let boardCursor = 0;                        // selected row within the board's flat list
+let capture = null;                         // { buf } while capturing a new task title; null otherwise
+let dirty = false;                          // pending --no-sync board writes awaiting a flush
+let showHelp = false;                       // ? overlay: full keyboard reference
 const prevStatus = new Map();               // view.key → Map(id→status), drives NEW/done deltas
 
 // Beads in the exact order render() emits them (Kahn waves, capped at MAX_NODES), so the
@@ -421,22 +518,29 @@ function detailPane(b) {
 
 function draw() {
   const view = VIEWS[active];
-  const graph = graphForView(view);
-  const cur = statusMap(graph);
-  const prev = prevStatus.get(view.key);
-  const appeared = new Set(), doneNow = new Set();
-  if (prev) for (const [id, st] of cur) {
-    if (!prev.has(id)) appeared.add(id);
-    else if (st === 'closed' && prev.get(id) !== 'closed') doneNow.add(id);
-  }
-  prevStatus.set(view.key, cur);
-  const order = orderedIds(graph);
-  selected = Math.min(Math.max(0, selected), Math.max(0, order.length - 1));   // clamp to current list
   const interactive = !ONCE && process.stdin.isTTY;
   let out;
-  if (detailLoading) out = `\n${C.dim}loading bead…${C.reset}`;
-  else if (detail) out = detailPane(detail);
-  else {
+  if (showHelp) {
+    out = renderHelp({ views: VIEWS, active, frame });
+  } else if (detailLoading) {
+    out = `\n${C.dim}loading bead…${C.reset}`;
+  } else if (detail) {
+    out = detailPane(detail);
+  } else if (view.type === 'board') {
+    const r = renderBoard({ views: VIEWS, active, frame, updates, interactive });
+    out = ONCE ? r.lines.join('\n') : clipToViewport(r);
+  } else {
+    const graph = graphForView(view);
+    const cur = statusMap(graph);
+    const prev = prevStatus.get(view.key);
+    const appeared = new Set(), doneNow = new Set();
+    if (prev) for (const [id, st] of cur) {
+      if (!prev.has(id)) appeared.add(id);
+      else if (st === 'closed' && prev.get(id) !== 'closed') doneNow.add(id);
+    }
+    prevStatus.set(view.key, cur);
+    const order = orderedIds(graph);
+    selected = Math.min(Math.max(0, selected), Math.max(0, order.length - 1));   // clamp to current list
     const partition = partitionForView(view);
     const selectedId = interactive && order.length ? order[selected] : null;
     const r = render(graph, { title: titleOf(view), views: VIEWS, active, frame, updates, partition, selectedId, interactive }, { appeared, doneNow });
@@ -444,6 +548,32 @@ function draw() {
   }
   process.stdout.write(ONCE ? out + '\n' : `\x1b[2J\x1b[H${out}\n`);
   frame++;
+}
+
+// ---- board write path: optimistic, batched-sync (auto_sync is off) ----------
+//   Every write is a local --no-sync tbd commit; refreshSnapshot() gives immediate liveness and
+//   the poll reconciles authoritative order. dirty tracks unsynced writes; flushSync() batches
+//   the single `tbd sync` on capture-mode exit and on quit.
+async function boardWrite(args) {
+  dirty = true;
+  await tbd(args);
+  await refreshSnapshot();
+  draw();
+}
+async function flushSync() { if (dirty) { dirty = false; await tbd(['sync']); } }
+
+// Edit a bead's description in $EDITOR (never an in-TUI multiline editor). Suspend raw mode,
+// hand the terminal to the editor, resume, then persist via update --description.
+async function editBody(id) {
+  const meta = await tshow(id);
+  const tmp = join(tmpdir(), `bead-${id}.md`);
+  writeFileSync(tmp, meta.description || '');
+  if (raw) process.stdin.setRawMode(false);
+  process.stdout.write('\x1b[?25h');
+  spawnSync(process.env.EDITOR || 'vi', [tmp], { stdio: 'inherit' });
+  if (raw) process.stdin.setRawMode(true);
+  process.stdout.write('\x1b[?25l');
+  await boardWrite(['update', id, '--description', readFileSync(tmp, 'utf8'), '--no-sync']);
 }
 
 // ---- main -------------------------------------------------------------------
@@ -462,13 +592,50 @@ let lastMtime = sourceMtime(VIEWS[active]);
 
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
-  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); selected = 0; scrollTop = 0; detail = null; draw(); };
+  const nav = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); selected = 0; scrollTop = 0; boardCursor = 0; detail = null; capture = null; showHelp = false; draw(); };
   const move = (d) => { selected += d; draw(); };            // draw() clamps to the current list
   const halfPage = () => Math.max(1, Math.floor((process.stdout.rows || 40) / 2));
+  const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };
+  const openDetail = async (id) => { if (!id) return; detailLoading = true; draw(); detail = await tshow(id); detailLoading = false; draw(); };
   process.stdin.on('data', async (k) => {
-    if (k === 'q' || k === '\x03') { restore(); process.stdout.write('\n'); process.exit(0); }  // global quit
-    else if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } }           // modal: Esc closes
-    else if (k === '\x1b[A' || k === 'k') move(-1);          // ↑ / k
+    // (1) capture mode owns every key while active
+    if (capture) {
+      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; draw(); }
+      else if (k === '\x1b') { capture = null; await flushSync(); draw(); }               // Esc — exit + flush
+      else if (k === '\x7f' || k === '\b') { capture.buf = capture.buf.slice(0, -1); draw(); }
+      else if (k === '\x03') { await quit(); }                                            // Ctrl-C
+      else if (k >= ' ' && !k.startsWith('\x1b')) { capture.buf += k; draw(); }
+      return;
+    }
+    if (k === 'q' || k === '\x03') { await quit(); return; }                              // global quit (flushes)
+    if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } return; } // modal: Esc closes
+    if (showHelp) { showHelp = false; draw(); return; }                                   // any key closes help
+    if (k === '?') { showHelp = true; draw(); return; }
+    // (2) board view — capture + triage hotkeys
+    if (VIEWS[active].type === 'board') {
+      const { flat } = boardRows();
+      const sel = flat[boardCursor];
+      if (k === '\x1b[A' || k === 'k') { boardCursor = Math.max(0, boardCursor - 1); draw(); return; }
+      if (k === '\x1b[B' || k === 'j') { boardCursor = Math.min(Math.max(0, flat.length - 1), boardCursor + 1); draw(); return; }
+      if (k === 'g') { boardCursor = 0; draw(); return; }
+      if (k === 'G') { boardCursor = Math.max(0, flat.length - 1); draw(); return; }
+      if (k === 'n') { capture = { buf: '' }; draw(); return; }
+      if (sel) {
+        const groomed = (sel.labels || []).includes('groomed');
+        if (k === '\r' || k === '\n') { await openDetail(sel.id); return; }
+        if (k === ' ') { await boardWrite(['label', groomed ? 'remove' : 'add', sel.id, 'groomed', '--no-sync']); return; }
+        if (k === 'x') { boardCursor = Math.max(0, boardCursor - 1); await boardWrite(['close', sel.id, '--no-sync']); return; }
+        if (k === ']') { await boardWrite(['update', sel.id, '--priority', String(Math.max(0, (sel.priority ?? 2) - 1)), '--no-sync']); return; }  // more important
+        if (k === '[') { await boardWrite(['update', sel.id, '--priority', String(Math.min(4, (sel.priority ?? 2) + 1)), '--no-sync']); return; }  // less important
+        if (k === 't') { const order = ['task', 'feature', 'bug', 'chore']; const next = order[(order.indexOf(sel.kind) + 1) % order.length]; await boardWrite(['update', sel.id, '--type', next, '--no-sync']); return; }
+        if (k === 'e') { await editBody(sel.id); return; }
+      }
+      if (k === '\t' || k === '\x1b[C') { nav(+1); return; }
+      if (k === '\x1b[Z' || k === '\x1b[D') { nav(-1); return; }
+      return;                                                                            // swallow other keys on the board
+    }
+    // (3) wave views — cursor / detail / scroll
+    if (k === '\x1b[A' || k === 'k') move(-1);               // ↑ / k
     else if (k === '\x1b[B' || k === 'j') move(+1);          // ↓ / j
     else if (k === '\x04') move(+halfPage());                // Ctrl-D · half-page down
     else if (k === '\x15') move(-halfPage());                // Ctrl-U · half-page up
@@ -477,10 +644,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
     else if (k === '\r' || k === '\n') {                     // Enter → open bead detail
       const view = VIEWS[active];
       if (view.type === 'fixture') return;                  // fixture ids aren't real tbd beads
-      const id = orderedIds(graphForView(view))[selected];
-      if (!id) return;
-      detailLoading = true; draw();
-      detail = await tshow(id); detailLoading = false; draw();
+      await openDetail(orderedIds(graphForView(view))[selected]);
     }
     else if (k === '\t' || k === '\x1b[C') nav(+1);          // Tab / →
     else if (k === '\x1b[Z' || k === '\x1b[D') nav(-1);      // Shift-Tab / ←

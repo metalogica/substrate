@@ -23,7 +23,7 @@ docs/scripts/bead-tui.sh --once          # render the default view once, exit (C
 docs/scripts/bead-tui.sh --list-views    # print discovered views, exit
 ```
 
-Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **q / Ctrl-C** quit.
+Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **?** help · **q / Ctrl-C** quit.
 The header (tab bar + epic title) stays pinned to the top; when the list is taller than the
 terminal, the body scrolls to keep the cursor visible: **j/k** (or **↑/↓**) move · **Ctrl-D/Ctrl-U**
 half-page · **g/G** top/bottom · **Enter** bead details · **Esc** back.
@@ -59,9 +59,33 @@ you prefer a bare command over a function — same single-definition idea.)
 
 ## Views (tabs)
 
+- **`board`** — the manual capture / triage surface (see below). Pinned **first**, always present.
 - **One tab per epic** (`epic:<slug>` label grouping), newest first — the latest is active on
   launch. Fully-closed (done) epics are hidden; pin one with `--tbd <slug>` to see it anyway.
-- **`unassigned`** — beads carrying no `epic:` label.
+- **`unassigned`** — open beads carrying no `epic:` label.
+- **`completed`** — closed orphan beads (no `epic:` label), kept out of `unassigned`.
+
+## Board — unfiled tasks (capture + triage)
+
+A keyboard-driven "brain dump" inbox for todos you spot while working — separate from the epic
+DAG views and **outside** orchestration. Flat two sections: **UNGROOMED** (raw dumps) then
+**GROOMED** (fleshed out, ready to hand off). It's a *staging area* — the board never writes into
+an `epic:` bead (the orchestrator owns those; exogenous edits are entropy).
+
+Membership is two free-form tbd labels — **no schema change**:
+
+- **`inbox`** — a bead is on the board iff it has `inbox` and is open/in_progress. Opt-in, so the
+  board shows only what you deliberately dumped, not every non-epic bead.
+- **`groomed`** — the GROOMED column toggle (named to avoid `tbd ready`, which means
+  dependency-unblocked — a different axis).
+
+Board keys: **↑/↓ (j/k)** move · **n** new task (type title, Enter commits + stays, Esc exits) ·
+**Enter** open detail · **e** edit body in `$EDITOR` · **space** toggle groomed · **x** kill ·
+**[ / ]** priority less/more · **t** cycle kind · **g/G** top/bottom · **?** full help.
+
+Capture is **model-free** (no agent, no LLM); writes use `--no-sync` (repos run `auto_sync:
+false`), so a burst of dumps is N local commits + a single `tbd sync` on capture-exit and quit.
+Don't run capture during an active `orchestrate` — both push `tbd-sync`.
 
 ## Watch it evolve
 
