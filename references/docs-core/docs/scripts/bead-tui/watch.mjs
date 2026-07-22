@@ -648,17 +648,21 @@ async function boardWrite(args) {
 }
 async function flushSync() { if (dirty) { dirty = false; await tbd(['sync']); } }
 
-// Edit a bead's description in $EDITOR (never an in-TUI multiline editor). Suspend raw mode,
-// hand the terminal to the editor, resume, then persist via update --description.
+// Edit a bead's description in $EDITOR (never an in-TUI multiline editor). Suspend raw mode and
+// LEAVE our alternate screen before handing the terminal to the editor, then re-enter it after —
+// editors emit their own `\x1b[?1049l` on exit, which would otherwise toggle OUR alt screen off and
+// dump the next redraw onto the primary buffer at the bottom. Re-entering gives a fresh, homed
+// screen; then persist via update --description.
 async function editBody(id) {
   const meta = await tshow(id);
   const tmp = join(tmpdir(), `bead-${id}.md`);
   writeFileSync(tmp, meta.description || '');
   if (raw) process.stdin.setRawMode(false);
-  process.stdout.write('\x1b[?25h');
+  process.stdout.write('\x1b[?1049l\x1b[?25h');                 // leave our alt screen, show cursor — editor owns the primary buffer
   spawnSync(process.env.EDITOR || 'vi', [tmp], { stdio: 'inherit' });
+  process.stdout.write('\x1b[?1049h\x1b[?25l');                 // re-enter a fresh, homed alt screen; hide cursor
   if (raw) process.stdin.setRawMode(true);
-  process.stdout.write('\x1b[?25l');
+  draw();                                                        // paint immediately so there's no blank frame during the tbd write
   await boardWrite(['update', id, '--description', readFileSync(tmp, 'utf8'), '--no-sync']);
   await flushSync();   // a deliberate body edit must reach the shared tbd-sync store now, not only at a clean quit
 }
