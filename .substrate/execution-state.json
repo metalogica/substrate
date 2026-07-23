@@ -65,6 +65,12 @@
         "commands": ["cd daemon && pnpm exec tsc --noEmit", "cd daemon && pnpm exec vitest run", "bash references/docs-core/docs/scripts/doctrine-lint.sh"],
         "result": "green",
         "tip-sha": "eefaeb3"
+      },
+      {
+        "wave": 6,
+        "commands": ["bash -n scripts/substrate", "cd daemon && pnpm exec tsc --noEmit", "cd daemon && pnpm exec vitest run", "bash references/docs-core/docs/scripts/doctrine-lint.sh"],
+        "result": "green",
+        "tip-sha": "0ab30c9"
       }
     ],
     "deviations-fileguard": [
@@ -82,7 +88,8 @@
       "sub-bwqh": { "status": "pass", "commit": "5c284b8", "window": "window-4", "wave": 3 },
       "sub-fu3f": { "status": "pass", "commit": "fece684", "window": "window-3", "wave": "4a" },
       "sub-35nn": { "status": "open", "commit": "c97aeb1", "window": "window-2", "wave": "4b", "note": "merged; headless-green; awaiting out-of-band live drill (Policy-4)" },
-      "sub-x881": { "status": "open", "commit": "596e910", "window": "window-2", "wave": 5, "note": "merged; headless-green; awaiting out-of-band live drill (Policy-4)" }
+      "sub-x881": { "status": "open", "commit": "596e910", "window": "window-2", "wave": 5, "note": "merged; headless-green; awaiting out-of-band live drill (Policy-4)" },
+      "sub-s6hf": { "status": "pass", "commit": "a520de0", "window": "window-2", "wave": 6 }
     },
     "run-log": ".substrate/runs/serve-v1/serve-v1-20260722-2357/"
   }
