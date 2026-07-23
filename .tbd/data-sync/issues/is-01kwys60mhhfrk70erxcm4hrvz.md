@@ -5,7 +5,7 @@ title: "[open-question] Should the plugin repo self-adopt its kernel to dogfood 
 kind: task
 status: open
 priority: 4
-version: 1
+version: 2
 labels:
   - epic:orchestrate
   - synth
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01kwyqmd14n7ey3kqmtfh6qvg1
 created_at: 2026-07-07T17:14:32.464Z
-updated_at: 2026-07-07T17:14:32.464Z
+updated_at: 2026-07-23T16:56:32.371Z
 ---
 ---
 type: open-question
@@ -42,3 +42,7 @@ duplication of a root kernel alongside the template tree.
 Next time someone wants to run a graphed substrate epic *in this repo* (e.g. to validate an orchestrate
 change end-to-end without a separate consumer repo), or if the keylark E2E (sub-glyc) proves insufficient
 as the sole behavioral proof.
+
+## Notes
+
+Update from session 2026-07-23 (epic:serve-v1 synthesis): ANSWERED empirically — /substrate:orchestrate ran fully in-repo and shipped serve-v1 (PR #1, merged aa2054a). Dogfooding works. BUT it required manual path resolution: bead-graph.sh + doctrine-lint live at references/docs-core/docs/scripts/, not the docs/scripts/ the skills expect. Recommend flipping this open-question to actionable: either fully self-adopt (symlink docs/ -> references/docs-core/docs) OR teach init/orchestrate/synthesize to path-search for the scripts. Also: substrate.yaml gate wired to daemon/ works.
