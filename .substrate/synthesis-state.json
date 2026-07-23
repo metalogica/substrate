@@ -1,4 +1,13 @@
 {
+  "serve-v1": {
+    "status": "complete",
+    "started": "2026-07-23T05:40:00Z",
+    "completed-steps": [3, 4, "4b", 5, 6, 7, 8, 9, 10],
+    "context": "full",
+    "completed": "2026-07-23T05:45:00Z",
+    "narrative-commit": null,
+    "notes": "Plugin-self-dogfood repo: no docs/doctrine/ (doctrine at references/docs-core/docs/doctrine/, ratified in-epic by sub-el41); spec still in docs/tasks/ongoing/serve-v1/ (archive is sub-vk7c). No immediate doctrine fixes (all doctrine findings non-ratify-only -> beads). 6 beads created (sub-2860 sub-7710 sub-mxj6 sub-sk6w sub-v60v sub-2nu6); 2 updates (sub-yum8 sub-vk7c)."
+  },
   "orchestrate": {
     "status": "complete",
     "started": "2026-07-07T17:11:26Z",
