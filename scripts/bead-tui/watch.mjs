@@ -10,7 +10,7 @@
 //   node watch.mjs --list-views          # print discovered views, exit
 //
 // Nav (interactive TTY only) — views are a FIXED two, lateral switching only:
-//   Planning · Epics   ·   Tab / Shift-Tab or 1–2 to switch · q quit.
+//   Planning · Epics   ·   Tab / Shift-Tab or 1–2 to switch · Esc backs out / exits · Ctrl-C quits.
 // (Orphan/closed beads aren't surfaced — use the tbd CLI directly for those.)
 // Epics is a drill target, not a flat tab-per-epic: it lists every active epic (newest first),
 // and → / Enter drills into one epic's beads (← / Esc pops back). Arrows are HIERARCHICAL
@@ -54,9 +54,26 @@ async function resolveBin() {
   try { await pexec('npx', ['--no-install', 'get-tbd', '--version']); return (_bin = { cmd: 'npx', pre: ['--no-install', 'get-tbd'] }); } catch { /* none */ }
   return (_bin = null);
 }
+// Kill a wedged tbd call after TBD_TIMEOUT. `tbd sync` does git network I/O while holding the store
+// lock; if it hangs (offline, auth prompt with no TTY), every later write queues behind it forever
+// and edits silently vanish. A hard timeout kills the child, releases the lock, and lets the TUI
+// recover instead of deadlocking. Reads just return null (last good frame is kept).
+const TBD_TIMEOUT = 30000;
+// tbd <=0.3 accepts `--no-sync` (skip auto-sync on reads/writes); 0.4+ removed the flag
+// (sync is config-driven now — `auto_sync: false` makes it a no-op). Probe once, then strip
+// `--no-sync` from every call when unsupported, else 0.4+ rejects the arg and each call fails
+// → empty snapshot → "(no active epics)". Mirrors docs/scripts/bead-graph.sh's probe-once.
+let _noSync;                                                  // undefined until probed
+async function noSyncSupported() {
+  if (_noSync !== undefined) return _noSync;
+  const b = await resolveBin(); if (!b) return (_noSync = false);
+  try { await pexec(b.cmd, [...b.pre, 'list', '--no-sync'], { timeout: TBD_TIMEOUT, killSignal: 'SIGTERM' }); return (_noSync = true); }
+  catch { return (_noSync = false); }
+}
 async function tbd(a) {
   const b = await resolveBin(); if (!b) return null;
-  try { const { stdout } = await pexec(b.cmd, [...b.pre, ...a], { maxBuffer: 1 << 26 }); return stdout; } catch { return null; }
+  const args = (await noSyncSupported()) ? a : a.filter((x) => x !== '--no-sync');
+  try { const { stdout } = await pexec(b.cmd, [...b.pre, ...args], { maxBuffer: 1 << 26, timeout: TBD_TIMEOUT, killSignal: 'SIGTERM' }); return stdout; } catch { return null; }
 }
 const tbdAvailable = async () => (await resolveBin()) !== null;
 function jparse(s, fallback) { try { return JSON.parse(s); } catch { return fallback; } }
@@ -291,10 +308,10 @@ function render(graph, meta, deltas) {
     if (meta.breadcrumb) bits.push('←/Esc back');
     if (meta.selectedId) bits.push('↑↓ select · Enter details');
     if (meta.views.length > 1) bits.push('Tab/1-2 view');
-    bits.push('? help · q quit');
+    bits.push('? help');
     nav = ` ${C.dim}· ${bits.join(' · ')}${C.reset}`;
   } else if (meta.views.length > 1) {
-    nav = `${C.dim} · Tab/1-2 view · q quit${C.reset}`;
+    nav = `${C.dim} · Tab/1-2 view${C.reset}`;
   }
   lines.push(`${C.bold}${meta.title}${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
@@ -387,6 +404,40 @@ function boardRows() {
   return { un, gr, flat: [...un, ...gr] };
 }
 
+// ---- inline single-line editor (shared by `n` new-task capture and `r` title rename) ---------
+//   State = { buf, pos }. Beyond append+backspace it supports arrow keys, Home/End (Ctrl-A/E),
+//   word jumps (Ctrl-/Alt-←→), and readline deletes (Backspace, Delete, Ctrl-W word, Ctrl-U/K
+//   line) so the caret can sit anywhere in the text. Returns true if k was consumed as an edit.
+//   (Bare Esc / Enter are handled by the caller before this, so they never reach here.)
+function lineEdit(s, k) {
+  const b = s.buf; const p = Math.max(0, Math.min(s.pos ?? b.length, b.length));
+  const wordL = (i) => { while (i > 0 && b[i - 1] === ' ') i--; while (i > 0 && b[i - 1] !== ' ') i--; return i; };
+  const wordR = (i) => { while (i < b.length && b[i] === ' ') i++; while (i < b.length && b[i] !== ' ') i++; return i; };
+  switch (k) {
+    case '\x1b[D': s.pos = Math.max(0, p - 1); return true;                          // ←
+    case '\x1b[C': s.pos = Math.min(b.length, p + 1); return true;                   // →
+    case '\x01': case '\x1b[H': case '\x1b[1~': s.pos = 0; return true;              // Ctrl-A / Home
+    case '\x05': case '\x1b[F': case '\x1b[4~': s.pos = b.length; return true;       // Ctrl-E / End
+    case '\x1b[1;5D': case '\x1b[1;3D': s.pos = wordL(p); return true;               // Ctrl-← / Alt-← : word left
+    case '\x1b[1;5C': case '\x1b[1;3C': s.pos = wordR(p); return true;               // Ctrl-→ / Alt-→ : word right
+    case '\x7f': case '\b': if (p > 0) { s.buf = b.slice(0, p - 1) + b.slice(p); s.pos = p - 1; } return true;  // Backspace
+    case '\x1b[3~': s.buf = b.slice(0, p) + b.slice(p + 1); s.pos = p; return true;  // Delete (forward)
+    case '\x17': { const i = wordL(p); s.buf = b.slice(0, i) + b.slice(p); s.pos = i; return true; }            // Ctrl-W word
+    case '\x15': s.buf = b.slice(p); s.pos = 0; return true;                         // Ctrl-U: delete to line start
+    case '\x0b': s.buf = b.slice(0, p); s.pos = p; return true;                      // Ctrl-K: delete to line end
+    default:
+      if (k >= ' ' && !k.startsWith('\x1b')) { s.buf = b.slice(0, p) + k + b.slice(p); s.pos = p + 1; return true; }  // insert
+      return false;
+  }
+}
+
+// Render an inline editor's buffer with a block caret (reverse video) under the char at pos.
+function editLine(label, s) {
+  const b = s.buf; const p = Math.max(0, Math.min(s.pos ?? b.length, b.length));
+  const at = p < b.length ? b[p] : ' ';
+  return `${C.in_progress}▶ ${label}:${C.reset} ${C.title}${b.slice(0, p)}${C.rev}${at}${C.unrev}${b.slice(p + 1)}${C.reset}`;
+}
+
 function renderBoard(meta) {
   const spin = ['⟳', '⟲'][meta.frame % 2];
   const { un, gr, flat } = boardRows();
@@ -395,7 +446,7 @@ function renderBoard(meta) {
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  const nav = meta.interactive ? ` ${C.dim}· Tab/1-2 view · ↑↓ select · n new · ? help · q quit${C.reset}` : '';
+  const nav = meta.interactive ? ` ${C.dim}· Tab/1-2 view · ↑↓ select · n new · ? help · Esc exit${C.reset}` : '';
   lines.push(`${C.bold}unfiled tasks${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
@@ -420,8 +471,9 @@ function renderBoard(meta) {
   section('UNGROOMED', un);
   section('GROOMED', gr);
   lines.push('');
-  if (capture) lines.push(`${C.in_progress}▶ new:${C.reset} ${C.title}${capture.buf}${C.reset}▌`);
-  lines.push(`${C.dim}n new · e body · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
+  if (capture) lines.push(editLine('new', capture));
+  if (renaming) lines.push(editLine('title', renaming));
+  lines.push(`${C.dim}n new · e body · r title · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
 
@@ -482,7 +534,7 @@ function renderEpicList(meta) {
   }
   lines.push('');
   if (epicFiltering) lines.push(`${C.in_progress}▶ filter:${C.reset} ${C.title}${epicFilter}${C.reset}▌`);
-  lines.push(`${C.dim}→/Enter open · / filter · Esc clear · Tab/1-2 switch view${C.reset}`);
+  lines.push(`${C.dim}→/Enter open · / filter · Esc clear/exit · Tab/1-2 switch view${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
 
@@ -491,7 +543,7 @@ function renderHelp(meta) {
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
-  lines.push(`${C.bold}keyboard reference${C.reset}   ${C.dim}any key to close · q quit${C.reset}`);
+  lines.push(`${C.bold}keyboard reference${C.reset}   ${C.dim}any key to close${C.reset}`);
   lines.push('');
   const row = (k, d) => lines.push(`  ${C.title}${k.padEnd(16)}${C.reset}${C.dim}${d}${C.reset}`);
   const head = (t) => lines.push(`${C.dim}── ${t} ${'─'.repeat(Math.max(0, 38 - t.length))}${C.reset}`);
@@ -499,12 +551,15 @@ function renderHelp(meta) {
   row('1 – 2', 'jump to Planning · Epics');
   row('Tab  Shift-Tab', 'next / previous view');
   row('?', 'toggle this help');
-  row('q  Ctrl-C', 'quit (flushes pending sync)');
+  row('Esc', 'back out one level; from the top level, exit (flushes pending sync)');
+  row('Ctrl-C', 'quit immediately (no flush)');
   lines.push('');
   head('planning · unfiled tasks');
   row('↑ ↓  j k', 'move cursor');
   row('n', 'new task — type title, Enter commits (stays), Esc exits');
   row('Enter', 'open bead detail');
+  row('r', 'rename — edit the title inline (Enter saves, Esc cancels)');
+  row('  ↑ in n/r', '← → move caret · Home/End (^A/^E) · ^←→ word · Del/^W/^U/^K');
   row('e', 'edit body in $EDITOR');
   row('space', 'toggle groomed (ungroomed ↔ groomed)');
   row('x', 'kill / close selected');
@@ -554,6 +609,7 @@ let detail = null;                          // opened bead detail object (tbd sh
 let detailLoading = false;                  // Enter pressed, tbd show in flight
 let boardCursor = 0;                        // selected row within the board's flat list
 let capture = null;                         // { buf } while capturing a new task title; null otherwise
+let renaming = null;                        // { id, buf } while editing an existing bead's title inline; null otherwise
 let dirty = false;                          // pending --no-sync board writes awaiting a flush
 let showHelp = false;                       // ? overlay: full keyboard reference
 let epicCursor = 0;                         // selected row within the epics index
@@ -568,7 +624,7 @@ const orderedIds = (graph) => analyze(graph).waves.flat().slice(0, MAX_NODES);
 
 // Detail overlay for one bead (tbd show), rendered instead of the list when `detail` is set.
 function detailPane(b) {
-  if (!b || !Object.keys(b).length) return `\n${C.blocked}could not load bead.${C.reset}\n\n${C.dim}Esc back · q quit${C.reset}`;
+  if (!b || !Object.keys(b).length) return `\n${C.blocked}could not load bead.${C.reset}\n\n${C.dim}Esc back${C.reset}`;
   const g = GLYPH[b.status] || GLYPH.open, col = C[b.status] || C.open;
   const fmtTs = (s) => s ? String(s).slice(0, 16).replace('T', ' ') : '?';
   const wrap = (s, w) => {
@@ -590,7 +646,7 @@ function detailPane(b) {
   lines.push(`${C.dim}created ${fmtTs(b.created_at)} · updated ${fmtTs(b.updated_at)}${C.reset}`);
   if (b.description) { lines.push(''); for (const l of wrap(b.description, 76)) lines.push(l); }
   lines.push('');
-  lines.push(`${C.dim}Esc back · q quit${C.reset}`);
+  lines.push(`${C.dim}Esc back${C.reset}`);
   return lines.join('\n');
 }
 
@@ -648,17 +704,21 @@ async function boardWrite(args) {
 }
 async function flushSync() { if (dirty) { dirty = false; await tbd(['sync']); } }
 
-// Edit a bead's description in $EDITOR (never an in-TUI multiline editor). Suspend raw mode,
-// hand the terminal to the editor, resume, then persist via update --description.
+// Edit a bead's description in $EDITOR (never an in-TUI multiline editor). Suspend raw mode and
+// LEAVE our alternate screen before handing the terminal to the editor, then re-enter it after —
+// editors emit their own `\x1b[?1049l` on exit, which would otherwise toggle OUR alt screen off and
+// dump the next redraw onto the primary buffer at the bottom. Re-entering gives a fresh, homed
+// screen; then persist via update --description.
 async function editBody(id) {
   const meta = await tshow(id);
   const tmp = join(tmpdir(), `bead-${id}.md`);
   writeFileSync(tmp, meta.description || '');
   if (raw) process.stdin.setRawMode(false);
-  process.stdout.write('\x1b[?25h');
+  process.stdout.write('\x1b[?1049l\x1b[?25h');                 // leave our alt screen, show cursor — editor owns the primary buffer
   spawnSync(process.env.EDITOR || 'vi', [tmp], { stdio: 'inherit' });
+  process.stdout.write('\x1b[?1049h\x1b[?25l');                 // re-enter a fresh, homed alt screen; hide cursor
   if (raw) process.stdin.setRawMode(true);
-  process.stdout.write('\x1b[?25l');
+  draw();                                                        // paint immediately so there's no blank frame during the tbd write
   await boardWrite(['update', id, '--description', readFileSync(tmp, 'utf8'), '--no-sync']);
   await flushSync();   // a deliberate body edit must reach the shared tbd-sync store now, not only at a clean quit
 }
@@ -680,14 +740,15 @@ let lastMtime = sourceMtime(VIEWS[active]);
 if (process.stdin.isTTY) {                  // instant, because the event loop is never blocked
   raw = true; process.stdin.setRawMode(true); process.stdin.resume(); process.stdin.setEncoding('utf8');
   // Lateral view switch (Tab / 1–2) resets ALL per-view cursors, including the epics drill + filter.
-  const resetView = () => { selected = 0; scrollTop = 0; boardCursor = 0; epicCursor = 0; drillSlug = null; detail = null; capture = null; showHelp = false; epicFiltering = false; epicFilter = ''; };
+  const resetView = () => { selected = 0; scrollTop = 0; boardCursor = 0; epicCursor = 0; drillSlug = null; detail = null; capture = null; renaming = null; showHelp = false; epicFiltering = false; epicFilter = ''; };
   const switchView = (d) => { active = Math.max(0, Math.min(VIEWS.length - 1, active + d)); resetView(); draw(); };
   const jumpView = (i) => { if (i < 0 || i >= VIEWS.length) return; active = i; resetView(); draw(); };
   const drillInto = (slug) => { drillSlug = slug; selected = 0; scrollTop = 0; draw(); };   // Epics index → one epic's beads
   const drillOut = () => { drillSlug = null; selected = 0; scrollTop = 0; draw(); };         // epic beads → back to the index
   const move = (d) => { selected += d; draw(); };            // draw() clamps to the current list
   const halfPage = () => Math.max(1, Math.floor((process.stdout.rows || 40) / 2));
-  const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };
+  const quit = async () => { await flushSync(); restore(); process.stdout.write('\n'); process.exit(0); };   // graceful (Esc from top level): flush pending tbd-sync
+  const quitFast = () => { restore(); process.stdout.write('\n'); process.exit(0); };                          // Ctrl-C: immediate, skip the (possibly slow) sync flush
   const openDetail = async (id) => { if (!id) return; detailLoading = true; draw(); detail = await tshow(id); detailLoading = false; draw(); };
   // A single stdin 'data' event can batch several keystrokes (fast typing, key-repeat, paste) —
   // e.g. tapping j quickly arrives as one 'jjj' chunk, and an exact `k === 'j'` test then fails.
@@ -707,11 +768,18 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
   const handleKey = async (k) => {
     // (1) capture mode owns every key while active
     if (capture) {
-      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; draw(); }
+      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; capture.pos = 0; draw(); }
       else if (k === '\x1b') { capture = null; await flushSync(); draw(); }               // Esc — exit + flush
-      else if (k === '\x7f' || k === '\b') { capture.buf = capture.buf.slice(0, -1); draw(); }
-      else if (k === '\x03') { await quit(); }                                            // Ctrl-C
-      else if (k >= ' ' && !k.startsWith('\x1b')) { capture.buf += k; draw(); }
+      else if (k === '\x03') { quitFast(); }                                            // Ctrl-C
+      else if (lineEdit(capture, k)) { draw(); }                                          // arrows / Home-End / word / insert-delete
+      return;
+    }
+    // (1b) inline title-rename owns every key while active
+    if (renaming) {
+      if (k === '\r' || k === '\n') { const t = renaming.buf.trim(); const id = renaming.id; renaming = null; if (t) { await boardWrite(['update', id, '--title', t, '--no-sync']); await flushSync(); } else draw(); }
+      else if (k === '\x1b') { renaming = null; draw(); }                                   // Esc — cancel, keep old title
+      else if (k === '\x03') { quitFast(); }                                              // Ctrl-C
+      else if (lineEdit(renaming, k)) { draw(); }                                           // arrows / Home-End / word / insert-delete
       return;
     }
     // (2) epic-index filter capture owns every key while typing
@@ -719,11 +787,11 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === '\r' || k === '\n') { epicFiltering = false; draw(); }                    // Enter — keep the narrowing, stop typing
       else if (k === '\x1b') { epicFiltering = false; epicFilter = ''; epicCursor = 0; draw(); }  // Esc — clear
       else if (k === '\x7f' || k === '\b') { epicFilter = epicFilter.slice(0, -1); epicCursor = 0; draw(); }
-      else if (k === '\x03') { await quit(); }                                            // Ctrl-C
+      else if (k === '\x03') { quitFast(); }                                            // Ctrl-C
       else if (k >= ' ' && !k.startsWith('\x1b')) { epicFilter += k; epicCursor = 0; draw(); }
       return;
     }
-    if (k === 'q' || k === '\x03') { await quit(); return; }                              // global quit (flushes)
+    if (k === '\x03') { quitFast(); return; }                                             // Ctrl-C — immediate exit (no flush)
     if (detail || detailLoading) { if (k === '\x1b') { detail = null; draw(); } return; } // modal: Esc closes
     if (showHelp) { showHelp = false; draw(); return; }                                   // any key closes help
     if (k === '?') { showHelp = true; draw(); return; }
@@ -736,11 +804,12 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
     if (view.type === 'board') {
       const { flat } = boardRows();
       const sel = flat[boardCursor];
+      if (k === '\x1b') { await quit(); return; }             // Esc at the top level — graceful exit (flushes)
       if (k === '\x1b[A' || k === 'k') { boardCursor = Math.max(0, boardCursor - 1); draw(); return; }
       if (k === '\x1b[B' || k === 'j') { boardCursor = Math.min(Math.max(0, flat.length - 1), boardCursor + 1); draw(); return; }
       if (k === 'g') { boardCursor = 0; draw(); return; }
       if (k === 'G') { boardCursor = Math.max(0, flat.length - 1); draw(); return; }
-      if (k === 'n') { capture = { buf: '' }; draw(); return; }
+      if (k === 'n') { capture = { buf: '', pos: 0 }; draw(); return; }
       if (sel) {
         const groomed = (sel.labels || []).includes('groomed');
         if (k === '\r' || k === '\n') { await openDetail(sel.id); return; }
@@ -750,6 +819,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
         if (k === '[') { await boardWrite(['update', sel.id, '--priority', String(Math.min(4, (sel.priority ?? 2) + 1)), '--no-sync']); return; }  // less important
         if (k === 't') { const order = ['task', 'feature', 'bug', 'chore']; const next = order[(order.indexOf(sel.kind) + 1) % order.length]; await boardWrite(['update', sel.id, '--type', next, '--no-sync']); return; }
         if (k === 'e') { await editBody(sel.id); return; }
+        if (k === 'r') { renaming = { id: sel.id, buf: sel.title, pos: sel.title.length }; draw(); return; }   // inline edit the title (caret at end)
       }
       return;                                                                            // swallow other keys on the board
     }
@@ -763,7 +833,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === 'g') { epicCursor = 0; draw(); return; }
       if (k === 'G') { epicCursor = Math.max(0, epics.length - 1); draw(); return; }
       if (k === '/') { epicFiltering = true; draw(); return; }
-      if (k === '\x1b') { if (epicFilter) { epicFilter = ''; epicCursor = 0; draw(); } return; }   // Esc clears a standing filter
+      if (k === '\x1b') { if (epicFilter) { epicFilter = ''; epicCursor = 0; draw(); } else { await quit(); } return; }   // Esc clears a standing filter, else graceful exit
       if (k === 'l' || k === '\x1b[C' || k === '\r' || k === '\n') { if (epics[epicCursor]) drillInto(epics[epicCursor].slug); return; }  // → drill in
       return;                                                                            // swallow other keys on the index
     }

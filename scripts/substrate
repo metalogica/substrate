@@ -26,7 +26,22 @@ sub="${1:-}"
 
 case "$sub" in
   tasks)
-    exec "$root/references/docs-core/docs/scripts/bead-tui.sh" "$@"
+    exec "$root/scripts/bead-tui.sh" "$@"
+    ;;
+  ui)
+    exec "$root/scripts/substrate-ui.sh" "$@"
+    ;;
+  serve)
+    exec npx -y tsx "$root/daemon/src/serve.ts"  --repo "$PWD" "$@"
+    ;;
+  status)
+    exec npx -y tsx "$root/daemon/src/status.ts" --repo "$PWD" "$@"
+    ;;
+  tidy)
+    exec npx -y tsx "$root/daemon/src/tidy.ts"   --repo "$PWD" "$@"
+    ;;
+  triage)
+    exec npx -y tsx "$root/daemon/src/triage.ts" --repo "$PWD" "$@"
     ;;
   ""|-h|--help|help)
     cat <<'EOF'
@@ -35,10 +50,23 @@ substrate — substrate tooling CLI
 usage:
   substrate tasks [--tbd <slug>] [--fixture <path>] [--once]
       live bead TUI for the project in your current directory
+  substrate ui
+      one-window tmux workspace for the project in your current directory
+      (board / specs / agent windows on substrate's own tmux server;
+       M-1..M-3 jump, M-n new agent window, prefix-d detach)
+  substrate serve
+      local-first pull daemon: poll the tbd board, claim groomed beads, build
+      them as headless sessions in sibling worktrees, open PRs (serve-v1)
+  substrate status
+      aerial pipeline view of the serve daemon (board → building → in-review)
+  substrate tidy
+      manual reap: reconcile stale worktrees / claims / merged leftovers
+  substrate triage <bead-id>
+      claim + route + dispatch ONE bead now, bypassing the poll loop
 EOF
     ;;
   *)
-    echo "substrate: unknown command '$sub' (try: substrate tasks)" >&2
+    echo "substrate: unknown command '$sub' (try: substrate tasks, ui, serve, status, tidy, triage)" >&2
     exit 2
     ;;
 esac

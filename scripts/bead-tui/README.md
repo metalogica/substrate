@@ -7,63 +7,43 @@ graph); this one stays open and updates. Zero runtime deps — Node built-ins on
 
 ## Run
 
+This is a **global** substrate tool — **one** copy lives in the substrate repo (`scripts/bead-tui/`)
+and reads tbd + `.substrate` from your **current directory**, so it serves every project from a
+single script. It is deliberately **not** part of the docs-core payload, so `substrate adopt`
+does **not** clone it into adopted repos — they use this one via the CLI.
+
 ```bash
-# Auto-load the latest active epic; press Tab to cycle epics + unassigned:
-docs/scripts/bead-tui.sh
-#   (equivalently: node docs/scripts/bead-tui/watch.mjs)
+# From inside any project — the substrate CLI is the normal entry point:
+substrate tasks                     # open Planning; 1/2 or Tab switch to Epics
+substrate tasks --tbd <epic-slug>   # pin one epic
+substrate tasks --fixture <path>    # a fixture file (no tbd needed)
+substrate tasks --once              # render the default view once, exit (CI)
+substrate tasks --list-views        # print discovered views, exit
 
-# Pin one epic:
-docs/scripts/bead-tui.sh --tbd <epic-slug>
-
-# A specific fixture file (no tbd needed):
-docs/scripts/bead-tui.sh --fixture docs/scripts/bead-tui/fixture.json
-
-# Non-interactive:
-docs/scripts/bead-tui.sh --once          # render the default view once, exit (CI)
-docs/scripts/bead-tui.sh --list-views    # print discovered views, exit
+# Or the script directly (equivalently: node scripts/bead-tui/watch.mjs):
+scripts/bead-tui.sh [flags]
 ```
 
-Keys (interactive TTY): **Tab / →** next · **Shift-Tab / ←** prev · **?** help · **q / Ctrl-C** quit.
-The header (tab bar + epic title) stays pinned to the top; when the list is taller than the
-terminal, the body scrolls to keep the cursor visible: **j/k** (or **↑/↓**) move · **Ctrl-D/Ctrl-U**
-half-page · **g/G** top/bottom · **Enter** bead details · **Esc** back.
-Flags: `--tbd <slug>`, `--fixture <path>`, `--once`, `--list-views`, `--interval <ms>` (idle gap
-between polls, default 800).
+Put `substrate` on PATH with `scripts/substrate-link.sh` (it self-locates through symlinks, so
+there is no `SUBSTRATE_ROOT` to set). Flags: `--tbd <slug>`, `--fixture <path>`, `--once`,
+`--list-views`, `--interval <ms>` (idle gap between polls, default 800).
 
-## Shell shortcut (`substrate tasks`)
+## Views & keys
 
-`bead-tui.sh` resolves its own path through symlinks, and the TUI reads tbd + `.substrate`
-from your **current directory** — so **one copy on disk serves the whole machine**. Point a
-shell function at a single canonical copy and run it from inside whatever project you want to
-see, instead of maintaining a per-repo shortcut:
+Two **fixed** views — **Planning** and **Epics** — switched with **1 / 2** or **Tab / Shift-Tab**.
+Arrows are **hierarchical** (drill in / out), never lateral. **Esc** backs out one level and, from
+the top level, exits (flushing pending sync); **Ctrl-C** quits immediately. **?** opens full help.
 
-```zsh
-# ~/.zshrc — one definition, run from anywhere. SUBSTRATE_ROOT = your substrate clone.
-export SUBSTRATE_ROOT="$HOME/code/metalogica/substrate"
-substrate() {
-  local sub="${1:-}"; (( $# )) && shift
-  local tui="$SUBSTRATE_ROOT/references/docs-core/docs/scripts/bead-tui.sh"
-  case "$sub" in
-    tasks) [[ -x $tui ]] || { print -u2 "substrate: TUI not found at $tui"; return 1; }
-           "$tui" "$@" ;;                                  # → the live bead TUI
-    ""|-h|--help) print "usage: substrate tasks [--tbd <slug>] [--fixture <path>] [--once]" ;;
-    *) print -u2 "substrate: unknown command '$sub'"; return 2 ;;
-  esac
-}
-```
+- **Planning** — the capture / triage board (see below). **↑/↓ (j/k)** move · **n** new · **r**
+  rename title inline · **e** edit body in `$EDITOR` · **space** groom · **x** kill · **[ / ]**
+  priority · **t** cycle kind · **Enter** detail.
+- **Epics** — a scrollable index of active epics (progress strip + done/total, newest first).
+  **↑/↓ (j/k)** move · **/** filter by name · **→ / Enter / l** drill into an epic's beads ·
+  **← / Esc / h** back. Orphan and closed beads aren't surfaced — use the tbd CLI for those.
+- **Epic beads** (drilled in) — the wave view: **↑/↓ (j/k)** move · **Ctrl-D/Ctrl-U** half-page ·
+  **g/G** top/bottom · **Enter** bead details · **← / Esc / h** back to the index.
 
-Then `substrate tasks` (or `substrate tasks --tbd <epic-slug>`) opens the TUI for the project
-you're standing in — one script on disk, no per-repo copies to keep in sync. (The symlink
-resolution is what lets you instead `ln -s "$tui" ~/.local/bin/substrate-tasks` onto PATH if
-you prefer a bare command over a function — same single-definition idea.)
-
-## Views (tabs)
-
-- **`board`** — the manual capture / triage surface (see below). Pinned **first**, always present.
-- **One tab per epic** (`epic:<slug>` label grouping), newest first — the latest is active on
-  launch. Fully-closed (done) epics are hidden; pin one with `--tbd <slug>` to see it anyway.
-- **`unassigned`** — open beads carrying no `epic:` label.
-- **`completed`** — closed orphan beads (no `epic:` label), kept out of `unassigned`.
+The `n` / `r` prompts are full inline editors (arrow keys, Home/End, word jumps, mid-string edit).
 
 ## Board — unfiled tasks (capture + triage)
 
@@ -80,8 +60,8 @@ Membership is two free-form tbd labels — **no schema change**:
   dependency-unblocked — a different axis).
 
 Board keys: **↑/↓ (j/k)** move · **n** new task (type title, Enter commits + stays, Esc exits) ·
-**Enter** open detail · **e** edit body in `$EDITOR` · **space** toggle groomed · **x** kill ·
-**[ / ]** priority less/more · **t** cycle kind · **g/G** top/bottom · **?** full help.
+**r** rename title inline · **Enter** open detail · **e** edit body in `$EDITOR` · **space** toggle
+groomed · **x** kill · **[ / ]** priority less/more · **t** cycle kind · **g/G** top/bottom · **?** full help.
 
 Capture is **model-free** (no agent, no LLM); writes use `--no-sync` (repos run `auto_sync:
 false`), so a burst of dumps is N local commits + a single `tbd sync` on capture-exit and quit.

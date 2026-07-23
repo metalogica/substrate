@@ -37,9 +37,9 @@
 
 See the commands at the top of this README. After install, all eight skills appear under `/substrate:*`.
 
-### The `substrate` CLI (`substrate tasks`)
+### The `substrate` CLI (`substrate tasks`, `substrate ui`)
 
-Alongside the `/substrate:*` skills, substrate ships a small shell CLI. Today it's `substrate tasks` — a live terminal view of your project's bead DAG (waves, blockers, status, updating as a fleet works). It's a self-locating binary you link onto your PATH once.
+Alongside the `/substrate:*` skills, substrate ships a small shell CLI: `substrate tasks` — a live terminal view of your project's bead DAG (waves, blockers, status, updating as a fleet works) — and `substrate ui` — a one-window tmux workspace (board / specs / interactive-agent windows on substrate's **own** tmux server socket, so your personal tmux config is untouched; `M-1..M-3` jump between windows, `M-n` opens a new agent window, `prefix d` detaches and the session persists). It's a self-locating binary you link onto your PATH once.
 
 The marketplace-installed plugin lives in a **version-keyed cache directory that changes on every update**, so link the CLI from a stable git clone instead:
 
@@ -53,6 +53,7 @@ Then, from inside any substrate/adopted project:
 ```bash
 substrate tasks                            # live bead TUI; reads tbd from your current dir
 substrate tasks --tbd <epic-slug>          # pin one epic   ·   --once renders once and exits
+substrate ui                               # one-window tmux workspace: board · specs · agent
 ```
 
 Notes:
@@ -60,6 +61,56 @@ Notes:
 - If `~/.local/bin` isn't on your PATH, the linker prints the line to add — it never edits your shell rc.
 - A shell function or alias named `substrate` shadows the binary; remove it if you have one.
 - Change the target dir with `scripts/substrate-link.sh <dir>` or `SUBSTRATE_BIN_DIR=<dir>`. Remove with `scripts/substrate-unlink.sh`.
+
+### The serve daemon (`substrate serve`)
+
+`substrate serve` is a **local-first pull daemon**: it polls your project's tbd board, claims groomed
+beads, builds each one as a headless `claude` session in its own sibling git worktree, opens a PR, and
+tidies up after merges — turning a groomed backlog into a stream of review-ready PRs without you
+babysitting the loop. It is single-operator, runs on your own machine, and shares the same tbd store
+as `substrate tasks`. The verbs:
+
+| verb | what it does |
+|---|---|
+| `substrate serve` | Boot the daemon in the current repo. Runs preflight (`git`, `tbd` board initialized, `gh` authenticated, `claude`), then **boot-reap** (reconcile any stale worktrees/claims from a prior crash), then ticks on the poll interval — **PR-sweep first** each cycle (comments to actualize, merges to tidy), then claim → route → dispatch the next groomed bead if there's capacity. `Ctrl-C` flushes state and exits cleanly; un-dispatched claims are left for the next boot-reap to reconcile. |
+| `substrate status` | Aerial pipeline view of the board — the stations work flows through (`board → claimed → building → in-review → merged`), a bounced row, and tick health (a staleness **warning** when the last tick is older than 2× the poll interval). Reads `.substrate/serve/state.json`; degrades to state-only facts when tbd/gh aren't consulted. |
+| `substrate tidy` | Manual reap. Reconciles the world from **observed truth only** (`{tbd, git, gh}` — never from a possibly-torn `state.json`): merged/closed PR → reap the worktree + branch + prune; a stranded worktree (no live session, no open PR) → reap and release the bead's claim back to the board; an orphan `assignee=serve` claim with no worktree and no PR → release it. Then rewrites `state.json` from what it observed. |
+| `substrate triage <bead-id>` | Claim + route + dispatch **one named bead now**, skipping the poll wait, capacity check, and FIFO. Routes by the bead's `kind:` label (`kind:bug` → diagnose lane, `kind:feature`/`kind:task` → quick lane; `needs-spec`/missing kind → bounce back to the board), cuts a worktree, runs the headless session, and opens a PR — flipping the bead to `in-review`. PR creation is idempotent (`gh pr view` before `gh pr create`), so killing and re-running mid-flow never duplicates a branch or PR. |
+
+#### Configuration — `.substrate/serve.yaml`
+
+The daemon reads an **optional** `.substrate/serve.yaml` in the repo root; every field is defaulted, so
+an absent file runs with the defaults below. User values are merged over the defaults:
+
+```yaml
+# .substrate/serve.yaml — all fields optional; these are the defaults.
+pollIntervalSec: 60          # seconds between poll cycles
+concurrency: 1               # max in-flight beads (HARD-CAPPED at 2 in v1, regardless of this value)
+lanes:
+  quick:                     # kind:feature / kind:task route here
+    skill: quick-spec        # runs /substrate:quick-spec
+    model: null              # null → inherit the session default model
+  bug:                       # kind:bug routes here
+    skill: diagnose          # runs /substrate:diagnose
+    model: null
+branchPrefix: "serve/"       # prefix for daemon-cut worktree branches
+worktreeRoot: null           # null → default sibling root ../<repo>-serve/<bead-id>/
+```
+
+#### Standing risk — headless permission bypass
+
+Each lane session is spawned as:
+
+```
+claude -p "<lane prompt>" --output-format json --dangerously-skip-permissions [--model <lane.model>]
+```
+
+`--dangerously-skip-permissions` is a **permission bypass**: the headless session runs without the
+interactive permission prompts, so it can read/write/run anything its prompt drives inside its worktree.
+This is an **accepted v1 risk**: it is scoped by the worktree `cwd` and the lane prompt, and serve is a
+**single-operator, own-machine** tool. Do not run `substrate serve` on a repo or a machine where an
+unattended, permission-bypassed `claude` session is not acceptable. The v1 disposition is to revisit
+this with sandboxing at the VPS phase; until then, the bypass is the daemon's standing operational risk.
 
 ### Development
 
