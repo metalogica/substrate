@@ -1,0 +1,35 @@
+{
+  "serve-v1": {
+    "run-id": "serve-v1-20260722-2357",
+    "landing-mode": "--pr",
+    "integration-branch": "feat/serve-v1",
+    "trunk": "main",
+    "partition": {
+      "window-1": ["sub-hat7"],
+      "window-2": ["sub-76qm", "sub-8f85", "sub-35nn", "sub-x881", "sub-s6hf"],
+      "window-3": ["sub-6v4l", "sub-ex6l", "sub-fu3f"],
+      "window-4": ["sub-nfiw", "sub-bwqh"],
+      "window-5": ["sub-wiya"],
+      "window-6": ["sub-u5st"],
+      "window-7": ["sub-b6au", "sub-x46j"],
+      "window-8": ["sub-el41"]
+    },
+    "deviations": [],
+    "re-gates": [
+      {
+        "wave": 1,
+        "commands": [
+          "cd daemon && pnpm exec tsc --noEmit",
+          "cd daemon && pnpm exec vitest run",
+          "bash references/docs-core/docs/scripts/doctrine-lint.sh"
+        ],
+        "result": "green",
+        "tip-sha": "85512d3"
+      }
+    ],
+    "outcomes": {
+      "sub-hat7": { "status": "pass", "commit": "00fc147", "window": "window-1", "wave": 1 }
+    },
+    "run-log": ".substrate/runs/serve-v1/serve-v1-20260722-2357/"
+  }
+}
