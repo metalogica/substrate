@@ -116,6 +116,17 @@ describe.skipIf(!HAS_TBD)("queue.ts tbd adapter", () => {
     expect(queue.list().map((x: Bead) => x.id)).toEqual([b, c]);
   });
 
+  it("addLabel adds a single label (needs-spec re-apply on a spec-lane bounce)", () => {
+    const id = seed(dir, "spec-bounced bead");
+    expect(show(dir, id).labels).not.toContain(NEEDS_SPEC_LABEL);
+
+    queue.addLabel(id, NEEDS_SPEC_LABEL);
+
+    expect(show(dir, id).labels).toContain(NEEDS_SPEC_LABEL);
+    // Additive — the pre-existing groomed label is untouched.
+    expect(show(dir, id).labels).toContain(GROOMED_LABEL);
+  });
+
   it("list() excludes needs-spec beads even when groomed+open", () => {
     const keep = seed(dir, "ready");
     const skip = seed(dir, "ungroomed", [NEEDS_SPEC_LABEL]);

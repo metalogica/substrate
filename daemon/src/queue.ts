@@ -158,6 +158,16 @@ export class Queue {
   }
 
   /**
+   * Add a single label to a bead (§3.1 support). Minimal verb the router's
+   * {@link import("./router.js").BounceAdapter} needs to re-apply `needs-spec`
+   * on a spec-lane bounce — the pure `stamp` seam only carries `route`/`in-review`
+   * labels, not an arbitrary one. Kept intentionally narrow (one label, no note).
+   */
+  addLabel(id: string, label: string): void {
+    this.exec(["update", id, "--add-label", label]);
+  }
+
+  /**
    * any → released (§3.1): restore the `groomed` label, clear the assignee, and
    * set status back to open so the bead returns to the board.
    */
