@@ -25,10 +25,26 @@
         ],
         "result": "green",
         "tip-sha": "85512d3"
+      },
+      {
+        "wave": 2,
+        "commands": [
+          "bash -n scripts/substrate",
+          "cd daemon && pnpm exec tsc --noEmit",
+          "cd daemon && pnpm exec vitest run",
+          "bash references/docs-core/docs/scripts/doctrine-lint.sh"
+        ],
+        "result": "green",
+        "tip-sha": "b2eb552"
       }
     ],
     "outcomes": {
-      "sub-hat7": { "status": "pass", "commit": "00fc147", "window": "window-1", "wave": 1 }
+      "sub-hat7": { "status": "pass", "commit": "00fc147", "window": "window-1", "wave": 1 },
+      "sub-76qm": { "status": "pass", "commit": "5e54e31", "window": "window-2", "wave": 2 },
+      "sub-6v4l": { "status": "pass", "commit": "3b95c9c", "window": "window-3", "wave": 2 },
+      "sub-nfiw": { "status": "pass", "commit": "478cecc", "window": "window-4", "wave": 2 },
+      "sub-wiya": { "status": "pass", "commit": "3e3b04e", "window": "window-5", "wave": 2 },
+      "sub-u5st": { "status": "pass", "commit": "208ff04", "window": "window-6", "wave": 2 }
     },
     "run-log": ".substrate/runs/serve-v1/serve-v1-20260722-2357/"
   }
