@@ -118,7 +118,7 @@ can reuse it live.
   (green-prefix merge, incremental `execution-state.json`, `gh pr view || gh pr create`)
 - CLI entrypoint to extend: `scripts/substrate` (bash case-dispatcher; `tasks` verb precedent)
 - Lane skills consumed: `skills/quick-spec/SKILL.md`, `skills/diagnose/SKILL.md`
-- Board + labels: `references/docs-core/docs/scripts/bead-tui.sh` (`inbox`/`groomed` labels)
+- Board + labels: `scripts/bead-tui.sh` (global substrate tool, not per-repo payload; `inbox`/`groomed` labels)
 - Manual-firing ethos: operator explicitly values CLI-triggered single-task runs for iteration
   speed (`substrate triage <id>`)
 

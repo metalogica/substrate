@@ -26,7 +26,7 @@ sub="${1:-}"
 
 case "$sub" in
   tasks)
-    exec "$root/references/docs-core/docs/scripts/bead-tui.sh" "$@"
+    exec "$root/scripts/bead-tui.sh" "$@"
     ;;
   ui)
     exec "$root/scripts/substrate-ui.sh" "$@"
