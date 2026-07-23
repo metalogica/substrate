@@ -107,9 +107,11 @@ const contentSig = () => {
 //   MEMBERSHIP.epics: [{slug,ts}] newest-first · memberIds: slug→Set · unassigned: Set
 let MEMBERSHIP = null;
 async function refreshMembership() {
-  // Skip closed (done) epic containers — filtered from the tabs anyway, and a `tbd show`
-  // per closed epic is the dominant startup cost on repos with lots of history.
-  const epicRows = [...SNAP.rows.values()].filter((r) => r.kind === 'epic' && r.status !== 'closed');
+  // Load ALL epic containers (open and closed) — the Epics index shows both ACTIVE and COMPLETED
+  // sections, so fully-done epics can't be skipped. Cost: one `tbd show` + one `tlist` per epic;
+  // COMPLETED is collapsed by default, so on a large history the future lever is to defer the
+  // completed members' `tlist` until the section is expanded.
+  const epicRows = [...SNAP.rows.values()].filter((r) => r.kind === 'epic');
   const metas = await Promise.all(epicRows.map((e) => tshow(e.id)));    // all shows concurrently
   const slugTs = new Map();                                             // dedupe containers sharing a slug; keep newest
   for (const meta of metas) {
@@ -125,10 +127,9 @@ async function refreshMembership() {
     const ids = new Set(lists[i].filter((r) => r.kind !== 'epic').map((r) => r.id));
     memberIds.set(slug, ids); for (const id of ids) claimed.add(id);
   });
-  const active = (slug) => [...(memberIds.get(slug) || [])].some((id) => SNAP.rows.get(id)?.status !== 'closed');
-  const epics = [...slugTs.entries()]
-    .filter(([slug]) => active(slug))                                   // hide fully-closed (done) epics from the tabs
-    .map(([slug, ts]) => ({ slug, ts })).sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  const isActive = (slug) => { const ids = memberIds.get(slug) || new Set(); return ids.size === 0 || [...ids].some((id) => SNAP.rows.get(id)?.status !== 'closed'); };
+  const epics = [...slugTs.entries()]                                   // keep completed epics; tag active vs. all-done
+    .map(([slug, ts]) => ({ slug, ts, active: isActive(slug) })).sort((a, b) => (a.ts < b.ts ? 1 : -1));
   // Orphan beads (no epic: label). Split by status so closed work gets its own
   // 'completed' tab instead of cluttering 'unassigned' with done items.
   const orphans = [...SNAP.rows.values()].filter((r) => r.kind !== 'epic' && !claimed.has(r.id));
@@ -506,16 +507,21 @@ function epicStrip(rows, cap = 12) {
   }).join('');
   return rows.length > cap ? `${strip} ${C.dim}+${rows.length - cap}${C.reset}` : strip;
 }
-function epicsFiltered() {
-  const epics = MEMBERSHIP?.epics || [];
+function epicSections() {                     // filtered, split by active flag (newest-first within each)
   const q = epicFilter.trim().toLowerCase();
-  return q ? epics.filter((e) => e.slug.toLowerCase().includes(q)) : epics;
+  const epics = (MEMBERSHIP?.epics || []).filter((e) => !q || e.slug.toLowerCase().includes(q));
+  return { active: epics.filter((e) => e.active), completed: epics.filter((e) => !e.active) };
+}
+function epicsFiltered() {                     // the visible, navigable list (COMPLETED hidden while collapsed)
+  const { active, completed } = epicSections();
+  return [...active, ...(completedCollapsed ? [] : completed)];
 }
 
 function renderEpicList(meta) {
   const spin = ['⟳', '⟲'][meta.frame % 2];
-  const epics = epicsFiltered();
-  epicCursor = Math.max(0, Math.min(epics.length ? epics.length - 1 : 0, epicCursor));
+  const { active, completed } = epicSections();
+  const visibleLen = active.length + (completedCollapsed ? 0 : completed.length);
+  epicCursor = Math.max(0, Math.min(visibleLen ? visibleLen - 1 : 0, epicCursor));
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) {
@@ -523,28 +529,39 @@ function renderEpicList(meta) {
     lines.push(`${C.dim}Epics › ${epicFilter ? `${C.in_progress}/${epicFilter}${C.reset}` : '(all)'}${C.reset}`);
     lines.push('');
   }
-  const nav = meta.interactive ? ` ${C.dim}· ↑↓ move · →/Enter open · / filter · Tab/1-2 view · ? help${C.reset}` : '';
-  lines.push(`${C.bold}epics${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'} · ${epics.length} epic${epics.length === 1 ? '' : 's'}${C.reset}${nav}`);
+  const nav = meta.interactive ? ` ${C.dim}· ↑↓ move · →/Enter open · c fold done · / filter · Tab/1-2 view · ? help${C.reset}` : '';
+  lines.push(`${C.bold}epics${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'} · ${active.length} active · ${completed.length} done${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
-  let cursorLine = -1;
-  if (!epics.length) lines.push(`${C.dim}(${epicFilter ? `no epics match "${epicFilter}"` : 'no active epics'})${C.reset}`);
-  let shown = 0;
-  for (let i = 0; i < epics.length; i++) {
-    if (shown >= MAX_NODES) { lines.push(`${C.dim}   … +${epics.length - shown} more — raise with --max${C.reset}`); break; }
+  let cursorLine = -1, shown = 0;
+  // Render one epic row at absolute visible-index `idx` (what epicCursor indexes). Returns false at the cap.
+  const renderRow = (e, idx) => {
+    if (shown >= MAX_NODES) return false;
     shown++;
-    const e = epics[i];
     const { total, done, rows } = epicStats(e.slug);
-    const sel = i === epicCursor;
+    const sel = idx === epicCursor;
     if (sel) cursorLine = lines.length;
     const cur = sel ? `${C.rev}▸${C.unrev}` : ' ';
     const pad = ' '.repeat(Math.max(1, 28 - e.slug.length));
     const name = sel ? `${C.rev}${e.slug}${C.unrev}` : `${C.title}${e.slug}${C.reset}`;
     lines.push(` ${cur}${name}${pad}${epicStrip(rows)}  ${C.dim}${done}/${total}${C.reset}`);
+    return true;
+  };
+  const overflow = () => lines.push(`${C.dim}   … more — raise with --max${C.reset}`);
+  // ACTIVE section
+  lines.push(`${C.bold}ACTIVE${C.reset} ${C.dim}(${active.length})${C.reset}`);
+  if (!active.length) lines.push(`${C.dim}   (${epicFilter ? 'none match' : 'none'})${C.reset}`);
+  for (let i = 0; i < active.length; i++) if (!renderRow(active[i], i)) { overflow(); break; }
+  lines.push('');
+  // COMPLETED section — collapsed by default; `c` toggles
+  lines.push(`${C.bold}COMPLETED${C.reset} ${C.dim}(${completed.length})${C.reset}${C.dim} · c ${completedCollapsed ? 'expand' : 'collapse'}${C.reset}`);
+  if (!completedCollapsed) {
+    if (!completed.length) lines.push(`${C.dim}   (${epicFilter ? 'none match' : 'none'})${C.reset}`);
+    for (let i = 0; i < completed.length; i++) if (!renderRow(completed[i], active.length + i)) { overflow(); break; }
   }
   lines.push('');
   if (epicFiltering) lines.push(`${C.in_progress}▶ filter:${C.reset} ${C.title}${epicFilter}${C.reset}▌`);
-  lines.push(`${C.dim}→/Enter open · / filter · Esc clear/exit · Tab/1-2 switch view${C.reset}`);
+  lines.push(`${C.dim}→/Enter open · c fold done · / filter · Esc clear/exit · Tab/1-2 switch view${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
 
@@ -580,6 +597,7 @@ function renderHelp(meta) {
   head('epics · the index');
   row('↑ ↓  j k', 'move cursor');
   row('→  l  Enter', 'open the highlighted epic (drill in)');
+  row('c', 'fold / unfold the COMPLETED (all-done) epics section');
   row('/', 'filter epics by name · Esc clears');
   row('g  G', 'top / bottom');
   lines.push('');
@@ -626,6 +644,7 @@ let epicCursor = 0;                         // selected row within the epics ind
 let drillSlug = null;                       // when in the Epics view: null = index, slug = drilled into that epic's beads
 let epicFilter = '';                        // active substring narrowing the epics index (persists across visits within a session)
 let epicFiltering = false;                  // true while typing into the epic filter (owns every key, like capture)
+let completedCollapsed = true;              // Epics index: COMPLETED (all-done) epics folded by default; `c` toggles
 const prevStatus = new Map();               // view.key → Map(id→status), drives NEW/done deltas
 
 // Beads in the exact order render() emits them (Kahn waves, capped at MAX_NODES), so the
@@ -844,6 +863,7 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === 'g') { epicCursor = 0; draw(); return; }
       if (k === 'G') { epicCursor = Math.max(0, epics.length - 1); draw(); return; }
       if (k === '/') { epicFiltering = true; draw(); return; }
+      if (k === 'c') { completedCollapsed = !completedCollapsed; epicCursor = Math.min(epicCursor, Math.max(0, epicsFiltered().length - 1)); draw(); return; }  // fold/unfold COMPLETED
       if (k === '\x1b') { if (epicFilter) { epicFilter = ''; epicCursor = 0; draw(); } else { await quit(); } return; }   // Esc clears a standing filter, else graceful exit
       if (k === 'l' || k === '\x1b[C' || k === '\r' || k === '\n') { if (epics[epicCursor]) drillInto(epics[epicCursor].slug); return; }  // → drill in
       return;                                                                            // swallow other keys on the index
