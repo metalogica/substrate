@@ -9,15 +9,20 @@ import { describe, it, expect } from "vitest";
 import {
   tick,
   applyDispatchPolicy,
+  createPrSweep,
+  actualizePrompt,
   RETRIED_LABEL,
   type QueuePort,
   type Clock,
   type Router,
   type PrSweep,
+  type PrPort,
+  type ActualizeSpec,
   type TickDeps,
 } from "../src/tick.js";
 import type { Dispatch } from "../src/triage.js";
 import type { Bead, Route } from "../src/queue.js";
+import type { Comment, InFlightRef, OwnedPR, PullRequest } from "../src/prs.js";
 import { emptyState, type InFlight, type State } from "../src/state.js";
 import { DEFAULT_CONFIG, type Config } from "../src/config.js";
 
@@ -41,7 +46,8 @@ type Call =
   | { op: "claim"; id: string }
   | { op: "stamp"; id: string; route?: Route; note?: string; inReview?: boolean }
   | { op: "release"; id: string }
-  | { op: "addLabel"; id: string; label: string };
+  | { op: "addLabel"; id: string; label: string }
+  | { op: "close"; id: string; reason: string };
 
 /**
  * A fake queue that records claims + mutations. `list()` returns the given beads
@@ -65,6 +71,7 @@ function fakeQueue(
     stamp: (id, s) => calls.push({ op: "stamp", id, ...s }),
     release: (id) => calls.push({ op: "release", id }),
     addLabel: (id, label) => calls.push({ op: "addLabel", id, label }),
+    close: (id, reason) => calls.push({ op: "close", id, reason }),
     claimed,
     remaining: () => [...beads],
     calls,
@@ -297,5 +304,269 @@ describe("applyDispatchPolicy — §5.2 in isolation", () => {
     const out = applyDispatchPolicy(q, retried, { status: "no-pr", logPath: "/l", branch: "br" });
     expect(out).toEqual({ status: "bounced-failed", logPath: "/l" });
     expect(q.calls).toContainEqual({ op: "release", id: retried.id });
+  });
+});
+
+// ── §6 PR-sweep: actualize (batched comments) + merge detection ───────────────
+// Fake ports (no real gh/git/claude): prove the 304/no-op path, the new-comment
+// batch → fresh-session actualize (deduped), and merged-detection → tidy + close.
+
+/** A PullRequest fixture. `merged` flips mergedAt + mergeCommit. */
+function pr(number: number, headRefName: string, merged: { sha: string } | null = null): PullRequest {
+  return {
+    number,
+    headRefName,
+    state: merged ? "MERGED" : "OPEN",
+    mergedAt: merged ? "2026-07-22T13:00:00.000Z" : null,
+    mergeCommit: merged ? merged.sha : null,
+  };
+}
+
+/** A Comment fixture. */
+function comment(id: number, over: Partial<Comment> = {}): Comment {
+  return {
+    id,
+    kind: over.kind ?? "issue",
+    body: over.body ?? `comment ${id}`,
+    author: over.author ?? "rev",
+    createdAt: over.createdAt ?? "2026-07-22T10:00:00Z",
+  };
+}
+
+/**
+ * A fake {@link PrPort} driven by per-bead scripts. `owned` maps bead → PR;
+ * `comments` maps bead → the fresh-comment batch a poll returns; `merged` is the
+ * set of beads whose PR is detected merged. Records the calls it saw.
+ */
+function fakePrPort(script: {
+  owned: Record<string, PullRequest>;
+  comments?: Record<string, { fresh: Comment[]; cursor: number }>;
+}): PrPort & { detectMergeCalls: number[]; freshCommentsCalls: string[] } {
+  const detectMergeCalls: number[] = [];
+  const freshCommentsCalls: string[] = [];
+  const byBead = script.owned;
+  return {
+    detectMergeCalls,
+    freshCommentsCalls,
+    ownedPrs: async (refs: readonly InFlightRef[]): Promise<OwnedPR[]> => {
+      const out: OwnedPR[] = [];
+      for (const ref of refs) {
+        const p = byBead[ref.bead];
+        if (p !== undefined) out.push({ bead: ref.bead, pr: p });
+      }
+      return out;
+    },
+    freshComments: async (owned: OwnedPR) => {
+      freshCommentsCalls.push(owned.bead);
+      return script.comments?.[owned.bead] ?? { fresh: [], cursor: 0 };
+    },
+    detectMerge: async (p: PullRequest) => {
+      detectMergeCalls.push(p.number);
+      return p.mergedAt !== null
+        ? { merged: true, sha: p.mergeCommit }
+        : { merged: false, sha: null };
+    },
+  };
+}
+
+describe("createPrSweep — §6 actualize + merge detection", () => {
+  it("304 / no-new-comment poll → NO-OP (no session, bead stays in-flight)", async () => {
+    const specs: ActualizeSpec[] = [];
+    const q = fakeQueue([]);
+    const port = fakePrPort({
+      owned: { "b-1": pr(7, "serve/b-1") },
+      comments: { "b-1": { fresh: [], cursor: 0 } }, // 304 / nothing new
+    });
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async (s) => { specs.push(s); },
+      tidy: async () => { throw new Error("tidy must not fire on a no-op poll"); },
+      queue: q,
+      branchPrefix: "serve/",
+    });
+
+    const survivors = await sweep([inFlight("b-1")]);
+
+    expect(specs).toEqual([]); // no fresh session spawned
+    expect(q.calls).toEqual([]); // no close
+    expect(survivors.map((f) => f.bead)).toEqual(["b-1"]); // kept in-flight
+  });
+
+  it("new comments → ONE fresh session in the same worktree, batched + deduped", async () => {
+    const specs: ActualizeSpec[] = [];
+    const q = fakeQueue([]);
+    // The port hands back an already-deduped, id-sorted batch (prs.advanceComments).
+    const batch = [comment(101, { kind: "issue" }), comment(102, { kind: "review" })];
+    const port = fakePrPort({
+      owned: { "b-1": pr(7, "serve/b-1") },
+      comments: { "b-1": { fresh: batch, cursor: 102 } },
+    });
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async (s) => { specs.push(s); },
+      tidy: async () => { throw new Error("no merge → no tidy"); },
+      queue: q,
+      branchPrefix: "serve/",
+    });
+
+    const survivors = await sweep([inFlight("b-1")]);
+
+    // Exactly ONE fresh session, in the bead's worktree, carrying the WHOLE batch.
+    expect(specs).toHaveLength(1);
+    expect(specs[0]?.bead).toBe("b-1");
+    expect(specs[0]?.worktree).toBe("/wt/b-1");
+    expect(specs[0]?.pr).toBe(7);
+    expect(specs[0]?.comments.map((c) => c.id)).toEqual([101, 102]);
+    // The prompt inlines both comments keyed by id (the dedup/reply key).
+    expect(specs[0]?.prompt).toContain("#101");
+    expect(specs[0]?.prompt).toContain("#102");
+    // Not merged → not closed, still in-flight.
+    expect(q.calls.some((c) => c.op === "close")).toBe(false);
+    expect(survivors.map((f) => f.bead)).toEqual(["b-1"]);
+  });
+
+  it("merged PR → tidy hook + close(bead, 'merged <sha>') + retire from in-flight", async () => {
+    const q = fakeQueue([]);
+    const tidyCalls: Array<{ bead: string; sha: string | null }> = [];
+    const port = fakePrPort({
+      owned: { "b-1": pr(7, "serve/b-1", { sha: "deadbeef" }) },
+    });
+    const actualizeCalls: ActualizeSpec[] = [];
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async (s) => { actualizeCalls.push(s); },
+      tidy: async (bead, sha) => { tidyCalls.push({ bead, sha }); },
+      queue: q,
+      branchPrefix: "serve/",
+    });
+
+    const survivors = await sweep([inFlight("b-1")]);
+
+    // Tidy fired with the merge SHA, then the bead was closed with it.
+    expect(tidyCalls).toEqual([{ bead: "b-1", sha: "deadbeef" }]);
+    expect(q.calls).toContainEqual({ op: "close", id: "b-1", reason: "merged deadbeef" });
+    // Merged PR is terminal — NO actualize session on it.
+    expect(actualizeCalls).toEqual([]);
+    // Retired from the returned in-flight set (frees capacity next step).
+    expect(survivors).toEqual([]);
+  });
+
+  it("checks merge BEFORE actualize — a merged PR never spawns an actualize session", async () => {
+    const q = fakeQueue([]);
+    const actualizeCalls: ActualizeSpec[] = [];
+    // The port would hand back fresh comments, but merge wins → they're ignored.
+    const port = fakePrPort({
+      owned: { "b-1": pr(7, "serve/b-1", { sha: "cafe" }) },
+      comments: { "b-1": { fresh: [comment(200)], cursor: 200 } },
+    });
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async (s) => { actualizeCalls.push(s); },
+      tidy: async () => {},
+      queue: q,
+      branchPrefix: "serve/",
+    });
+
+    await sweep([inFlight("b-1")]);
+
+    expect(actualizeCalls).toEqual([]); // merge short-circuits actualize
+    expect(port.freshCommentsCalls).toEqual([]); // never even polled comments
+  });
+
+  it("mixed set: merge one, actualize another, pass a PR-less bead through", async () => {
+    const q = fakeQueue([]);
+    const specs: ActualizeSpec[] = [];
+    const port = fakePrPort({
+      owned: {
+        "b-merged": pr(1, "serve/b-merged", { sha: "aa11" }),
+        "b-comments": pr(2, "serve/b-comments"),
+        // "b-building" has NO owned PR — still building.
+      },
+      comments: { "b-comments": { fresh: [comment(5)], cursor: 5 } },
+    });
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async (s) => { specs.push(s); },
+      tidy: async () => {},
+      queue: q,
+      branchPrefix: "serve/",
+    });
+
+    const survivors = await sweep([
+      inFlight("b-merged"),
+      inFlight("b-comments"),
+      inFlight("b-building"),
+    ]);
+
+    // Merged bead closed + retired; the other two survive.
+    expect(q.calls).toContainEqual({ op: "close", id: "b-merged", reason: "merged aa11" });
+    expect(survivors.map((f) => f.bead).sort()).toEqual(["b-building", "b-comments"]);
+    // Exactly one actualize session — for the commented bead only.
+    expect(specs.map((s) => s.bead)).toEqual(["b-comments"]);
+  });
+
+  it("merged PR with an unknown sha closes with a legible reason", async () => {
+    const q = fakeQueue([]);
+    // mergedAt set but mergeCommit null (API lag) → detectMerge reports merged/null.
+    const merged = pr(9, "serve/b-1");
+    merged.mergedAt = "2026-07-22T14:00:00Z";
+    merged.mergeCommit = null;
+    const port: PrPort = {
+      ownedPrs: async () => [{ bead: "b-1", pr: merged }],
+      freshComments: async () => ({ fresh: [], cursor: 0 }),
+      detectMerge: async () => ({ merged: true, sha: null }),
+    };
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async () => {},
+      tidy: async () => {},
+      queue: q,
+      branchPrefix: "serve/",
+    });
+
+    await sweep([inFlight("b-1")]);
+    expect(q.calls).toContainEqual({ op: "close", id: "b-1", reason: "merged (sha unknown)" });
+  });
+});
+
+describe("actualizePrompt — batched, id-keyed (§6, brief OQ3)", () => {
+  it("inlines every comment keyed by id, with the never-merge rule", () => {
+    const p = actualizePrompt("b-1", 7, [
+      comment(101, { kind: "issue", body: "rename this", author: "rev" }),
+      comment(102, { kind: "review", body: "extract a helper", author: "rev" }),
+    ]);
+    expect(p).toContain("bead b-1");
+    expect(p).toContain("PR #7");
+    expect(p).toContain("#101");
+    expect(p).toContain("rename this");
+    expect(p).toContain("#102");
+    expect(p).toContain("extract a helper");
+    expect(p).toMatch(/never merge/i);
+    expect(p).toMatch(/reply to each comment/i);
+  });
+});
+
+describe("tick wired with the real §6 sweep", () => {
+  it("runs the sweep FIRST, retires a merged bead, then claims into the freed slot", async () => {
+    // cap 1, one in-flight bead whose PR just merged → sweep retires it → headroom.
+    const q = fakeQueue([bead(1)]);
+    const port = fakePrPort({ owned: { "m-1": pr(3, "serve/m-1", { sha: "99ff" }) } });
+    const sweep = createPrSweep({
+      prs: port,
+      actualize: async () => {},
+      tidy: async () => {},
+      queue: q,
+      branchPrefix: "serve/",
+    });
+    const state: State = { ...emptyState(), inFlight: [inFlight("m-1")] };
+    const result = await tick(
+      deps({ queue: q, config: configWith(1), state, sweepPrs: sweep }),
+    );
+
+    // Merged bead closed + retired → capacity opened → the board head is claimed.
+    expect(q.calls).toContainEqual({ op: "close", id: "m-1", reason: "merged 99ff" });
+    expect(q.claimed).toEqual(["fx-1"]);
+    expect(result.state.inFlight.map((f) => f.bead)).toEqual([]); // m-1 retired
+    expect(result.stopReason).toBeNull();
   });
 });
