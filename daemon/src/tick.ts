@@ -23,6 +23,7 @@ import type { Bead, Route } from "./queue.js";
 import type { InFlight, State } from "./state.js";
 import type { Config, Lane } from "./config.js";
 import type { Dispatch, DispatchResult } from "./triage.js";
+import type { Comment, InFlightRef, OwnedPR, PullRequest } from "./prs.js";
 
 /** The lane a claimed bead is routed to (§5.1). Mirrors config's lane keys. */
 export type Lane_ = keyof Config["lanes"];
@@ -43,6 +44,12 @@ export interface QueuePort {
   release(id: string): void;
   /** Add a single label (§3.1): re-apply `needs-spec` on a spec-lane bounce. */
   addLabel(id: string, label: string): void;
+  /**
+   * in-review → closed (§3.1): close a bead the daemon manages once its PR merged.
+   * The daemon is the single writer for ITS beads at runtime; the PR-sweep calls
+   * this with the merge SHA as the reason (§6 merge detection).
+   */
+  close(id: string, reason: string): void;
 }
 
 /** Monotonic-enough clock; injected so tests pin `lastTick` deterministically. */
@@ -58,18 +65,177 @@ export const systemClock: Clock = {
 
 /**
  * The PR-sweep seam (spec §4 step 1, §6). PR work outranks new claims, so it
- * runs FIRST every cycle. The real sweep (actualize comments, tidy merges) lands
- * in a LATER bead; for now this is an injectable placeholder that returns the
- * (possibly updated) inFlight set. Tests inject a spy to prove ordering; the
- * default is a no-op pass-through.
+ * runs FIRST every cycle. It takes the current in-flight set, does the §6 PR loop
+ * (actualize new comments, detect merges → tidy + close), and returns the
+ * (possibly retired) in-flight set the capacity check then reads.
  *
- * TODO(serve-v1, later bead): replace the default with the real §6 sweep —
- * comment actualization + merge tidy driven off `prs.ts`.
+ * The return may be sync or a promise: the built-in {@link noopPrSweep} is a sync
+ * pass-through (used by the pre-sub-x881 contract + ordering tests), while the
+ * real {@link createPrSweep} sweep is async because it shells out to gh + spawns
+ * actualize sessions + calls tidy. The tick `await`s whichever it is injected.
  */
-export type PrSweep = (inFlight: InFlight[]) => InFlight[];
+export type PrSweep = (inFlight: InFlight[]) => InFlight[] | Promise<InFlight[]>;
 
-/** Default PR-sweep: a no-op pass-through until the real §6 sweep lands. */
+/** Default PR-sweep: a no-op pass-through (no PR ports injected). */
 export const noopPrSweep: PrSweep = (inFlight) => inFlight;
+
+/**
+ * The gh/PR view the sweep consumes for ONE tick (§6). Injectable so vitest drives
+ * the sweep off fakes/fixtures with zero real `gh`/`git`. Backed in the daemon by
+ * `prs.ts` (owned-PR selection, ETag-conditioned comment polling, merge detection).
+ */
+export interface PrPort {
+  /**
+   * The owned PRs for the current in-flight set (§6): open PRs whose head branch
+   * matches `branchPrefix` and maps to an in-flight bead. The daemon binds this to
+   * `gh pr list` + `prs.selectOwnedPRs`; tests return a canned list.
+   */
+  ownedPrs(inFlight: readonly InFlightRef[]): Promise<OwnedPR[]>;
+  /**
+   * The UNADDRESSED comments for an owned PR since the last seen id, deduped by
+   * comment id, with the advanced cursor (§6 "dedup replies by comment id"). The
+   * daemon binds this to ETag-conditioned polling + `prs.advanceComments`; a 304 /
+   * no-new-comment poll returns `fresh: []` (and the cursor unchanged) so the
+   * sweep takes the no-op path.
+   */
+  freshComments(owned: OwnedPR): Promise<{ fresh: Comment[]; cursor: number }>;
+  /**
+   * Merge detection for an owned PR (§6): `mergedAt` non-null, or the
+   * `git merge-base --is-ancestor` fallback. Backed by `prs.detectMerge`.
+   */
+  detectMerge(pr: PullRequest): Promise<{ merged: boolean; sha: string | null }>;
+}
+
+/**
+ * Spawn ONE fresh actualize session in a bead's worktree (§6). A brand-new
+ * session (not a resumed one) with the batched, deduped comments — its prompt is
+ * composed by the caller ({@link createPrSweep} via {@link actualizePrompt}) and
+ * the rules are *address, push, reply to each comment via gh, never merge*. The
+ * daemon binds this to `session.ts` `runSession` over the real `claude` spawn;
+ * tests substitute a recorder. Returns nothing the sweep judges — success is
+ * observed on the NEXT poll (new commit / reply), same as the lane contract.
+ */
+export type ActualizeSession = (spec: ActualizeSpec) => Promise<void>;
+
+/** What one fresh actualize session needs to spawn (§6). */
+export interface ActualizeSpec {
+  /** The in-flight bead whose PR is being actualized. */
+  bead: string;
+  /** The bead's worktree — the fresh session runs in the SAME worktree (§6). */
+  worktree: string;
+  /** The owned PR number the comments belong to (for the reply `gh` calls). */
+  pr: number;
+  /** The batched, deduped, unaddressed comments this session must address (§6). */
+  comments: readonly Comment[];
+  /** The fully-composed actualize prompt (diff context + batched comments + rules). */
+  prompt: string;
+}
+
+/** The tidy hook the sweep fires on a detected merge (§7 reconcile). Injectable. */
+export type TidyHook = (bead: string, mergeSha: string | null) => Promise<void>;
+
+/** Everything the real §6 sweep drives, injected so it stays fake-testable. */
+export interface PrSweepDeps {
+  /** The gh/PR view (owned PRs, fresh comments, merge detection). */
+  prs: PrPort;
+  /** Fresh-session spawner for actualize (§6). */
+  actualize: ActualizeSession;
+  /** Tidy hook fired on a detected merge (§7). */
+  tidy: TidyHook;
+  /**
+   * The queue — the sweep only ever CLOSES a bead here (its merged bead, with the
+   * merge SHA). Runtime single-writer for the daemon's own beads (§3.1).
+   */
+  queue: Pick<QueuePort, "close">;
+  /** The branch prefix owned PRs must match (`config.branchPrefix`). */
+  branchPrefix: string;
+}
+
+/**
+ * Compose the fresh actualize session's prompt (§6): PR diff context + ALL the
+ * unaddressed comments, batched (locks brief OQ3: batch per poll, keyed by comment
+ * ids), and the standing rules — *address, push, reply to each comment via `gh`,
+ * never merge*. Kept pure + deterministic so the spawn spec is unit-testable.
+ *
+ * The comments are already deduped + id-sorted by the caller (via
+ * `prs.advanceComments`); we render them keyed by id so the session can reply to
+ * each by id and a re-poll never double-replies.
+ */
+export function actualizePrompt(bead: string, pr: number, comments: readonly Comment[]): string {
+  const lines = comments.map(
+    (c) => `- [#${c.id} ${c.kind} by ${c.author}] ${c.body}`,
+  );
+  return [
+    `You are a serve-v1 actualize worker for bead ${bead} (PR #${pr}).`,
+    `A reviewer left new feedback on your open PR. Address ALL of the comments`,
+    `below in this SAME worktree, then push. Reply to EACH comment via \`gh\``,
+    `(keyed by its #id, so a re-poll never double-replies). Standing rules:`,
+    `address every comment; commit + push the branch; reply to each comment via`,
+    `\`gh\`; NEVER merge; never run tbd.`,
+    `Unaddressed comments (batched this poll, keyed by id):`,
+    ...lines,
+  ].join("\n");
+}
+
+/**
+ * Build the REAL §6 PR-sweep from injectable ports — the "PR-sweep first" step
+ * the tick orders before any new claim. For each in-flight bead's owned PR:
+ *
+ *   1. MERGE FIRST — `prs.detectMerge`. Merged → fire the {@link TidyHook}
+ *      (§7 reconcile: reap worktree/branch), then `queue.close(bead, "merged <sha>")`
+ *      (the daemon closing a bead it manages at runtime), and RETIRE the bead from
+ *      the returned in-flight set. No actualize on a merged PR.
+ *   2. ELSE ACTUALIZE — `prs.freshComments` (ETag-conditioned, deduped by id via
+ *      `advanceComments`). Any `fresh` comment → spawn ONE fresh session in the
+ *      same worktree with the batched comments ({@link actualizePrompt}). A 304 /
+ *      no-new-comment poll yields `fresh: []` → NO-OP (the free 304 path, §6). The
+ *      bead stays in-flight.
+ *
+ * Beads with no owned PR (still building / PR not yet observed) pass through
+ * unchanged. Returns the surviving in-flight set (merged beads removed) for the
+ * tick's capacity check. Every effect is behind an injected port — no gh/git/
+ * claude/tbd here — so the whole loop is proven against fakes.
+ */
+export function createPrSweep(deps: PrSweepDeps): PrSweep {
+  return async (inFlight: InFlight[]): Promise<InFlight[]> => {
+    const refs: InFlightRef[] = inFlight.map((f) => ({ bead: f.bead, branch: f.branch }));
+    const owned = await deps.prs.ownedPrs(refs);
+    const ownedByBead = new Map<string, OwnedPR>();
+    for (const o of owned) ownedByBead.set(o.bead, o);
+
+    const retired = new Set<string>();
+
+    for (const f of inFlight) {
+      const o = ownedByBead.get(f.bead);
+      if (o === undefined) continue; // no owned PR yet — still building; skip.
+
+      // 1. Merge detection FIRST (§6). A merged PR is terminal — tidy + close +
+      //    retire; never actualize a PR that already landed.
+      const merge = await deps.prs.detectMerge(o.pr);
+      if (merge.merged) {
+        await deps.tidy(f.bead, merge.sha);
+        deps.queue.close(f.bead, `merged ${merge.sha ?? "(sha unknown)"}`);
+        retired.add(f.bead);
+        continue;
+      }
+
+      // 2. Actualize (§6). Poll comments deduped-by-id; a 304/no-new poll → no-op.
+      const { fresh } = await deps.prs.freshComments(o);
+      if (fresh.length === 0) continue; // 304 / nothing new — the free path.
+
+      await deps.actualize({
+        bead: f.bead,
+        worktree: f.worktree,
+        pr: o.pr.number,
+        comments: fresh,
+        prompt: actualizePrompt(f.bead, o.pr.number, fresh),
+      });
+    }
+
+    // The surviving in-flight set: merged beads retired, everything else kept.
+    return inFlight.filter((f) => !retired.has(f.bead));
+  };
+}
 
 /**
  * The route seam (spec §4 step 5, §5.1). Decides which lane a freshly-claimed
@@ -195,9 +361,11 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
   const route = deps.route ?? defaultRouter;
 
   // Step 1 — Sweep owned PRs FIRST (§4.1). PR work outranks new claims. The
-  // sweep may retire in-flight beads (merged) or leave them; we take its result
-  // as the authoritative post-sweep inFlight set for the capacity check below.
-  const inFlight = sweepPrs(deps.state.inFlight);
+  // sweep may retire in-flight beads (merged → tidy + close) or leave them
+  // (actualize new comments in-place); we take its result as the authoritative
+  // post-sweep inFlight set for the capacity check below. `await` because the
+  // real §6 sweep ({@link createPrSweep}) shells out; the no-op default is sync.
+  const inFlight = await sweepPrs(deps.state.inFlight);
 
   // The new observability snapshot. `lastTick` always advances so a stalled
   // daemon is visible in `status`. Truth still lives in {tbd, git, gh}.
