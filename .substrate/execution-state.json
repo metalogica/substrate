@@ -36,6 +36,17 @@
         ],
         "result": "green",
         "tip-sha": "b2eb552"
+      },
+      {
+        "wave": 3,
+        "commands": [
+          "bash -n scripts/substrate",
+          "cd daemon && pnpm exec tsc --noEmit",
+          "cd daemon && pnpm exec vitest run",
+          "bash references/docs-core/docs/scripts/doctrine-lint.sh"
+        ],
+        "result": "green",
+        "tip-sha": "86a0a9e"
       }
     ],
     "outcomes": {
@@ -44,7 +55,10 @@
       "sub-6v4l": { "status": "pass", "commit": "3b95c9c", "window": "window-3", "wave": 2 },
       "sub-nfiw": { "status": "pass", "commit": "478cecc", "window": "window-4", "wave": 2 },
       "sub-wiya": { "status": "pass", "commit": "3e3b04e", "window": "window-5", "wave": 2 },
-      "sub-u5st": { "status": "pass", "commit": "208ff04", "window": "window-6", "wave": 2 }
+      "sub-u5st": { "status": "pass", "commit": "208ff04", "window": "window-6", "wave": 2 },
+      "sub-8f85": { "status": "pass", "commit": "c884146", "window": "window-2", "wave": 3 },
+      "sub-ex6l": { "status": "pass", "commit": "5f34107", "window": "window-3", "wave": 3 },
+      "sub-bwqh": { "status": "pass", "commit": "5c284b8", "window": "window-4", "wave": 3 }
     },
     "run-log": ".substrate/runs/serve-v1/serve-v1-20260722-2357/"
   }
