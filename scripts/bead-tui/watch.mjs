@@ -59,9 +59,21 @@ async function resolveBin() {
 // and edits silently vanish. A hard timeout kills the child, releases the lock, and lets the TUI
 // recover instead of deadlocking. Reads just return null (last good frame is kept).
 const TBD_TIMEOUT = 30000;
+// tbd <=0.3 accepts `--no-sync` (skip auto-sync on reads/writes); 0.4+ removed the flag
+// (sync is config-driven now — `auto_sync: false` makes it a no-op). Probe once, then strip
+// `--no-sync` from every call when unsupported, else 0.4+ rejects the arg and each call fails
+// → empty snapshot → "(no active epics)". Mirrors docs/scripts/bead-graph.sh's probe-once.
+let _noSync;                                                  // undefined until probed
+async function noSyncSupported() {
+  if (_noSync !== undefined) return _noSync;
+  const b = await resolveBin(); if (!b) return (_noSync = false);
+  try { await pexec(b.cmd, [...b.pre, 'list', '--no-sync'], { timeout: TBD_TIMEOUT, killSignal: 'SIGTERM' }); return (_noSync = true); }
+  catch { return (_noSync = false); }
+}
 async function tbd(a) {
   const b = await resolveBin(); if (!b) return null;
-  try { const { stdout } = await pexec(b.cmd, [...b.pre, ...a], { maxBuffer: 1 << 26, timeout: TBD_TIMEOUT, killSignal: 'SIGTERM' }); return stdout; } catch { return null; }
+  const args = (await noSyncSupported()) ? a : a.filter((x) => x !== '--no-sync');
+  try { const { stdout } = await pexec(b.cmd, [...b.pre, ...args], { maxBuffer: 1 << 26, timeout: TBD_TIMEOUT, killSignal: 'SIGTERM' }); return stdout; } catch { return null; }
 }
 const tbdAvailable = async () => (await resolveBin()) !== null;
 function jparse(s, fallback) { try { return JSON.parse(s); } catch { return fallback; } }
