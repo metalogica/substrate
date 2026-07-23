@@ -106,11 +106,21 @@ wave**, finalized before the trunk squash):
       { "wave": 1, "commands": ["<gate.compile>", "<gate.test>", "<per-bead gate unioned in>"],
         "result": "pass|fail", "tip-sha": "<sha>" }
     ],
-    "outcomes": { "<bead-id>": { "status": "pass|fail|open", "commit": "<sha|null>" } },
+    "outcomes": { "<bead-id>": { "status": "dispatched|merged|verified|oob-pending|fail|closed", "commit": "<sha|null>" } },
     "run-log": ".substrate/runs/<epic>/<run-id>/"
   }
 }
 ```
+
+**`outcomes[id].status` is a non-destructive lifecycle** — `dispatched → merged → verified → closed`
+on the happy path, `oob-pending` for a merged bead awaiting an out-of-band gate, `fail` for one
+stopped mid-window. The orchestrator advances it at each point it gains knowledge (dispatch, merge,
+union re-gate), so a live watcher renders each bead's real-time categorical state **without any
+`tbd close` firing mid-run** — the bead stays `open` in the tracker until epic close. This is what
+lets the TUI show beads progressing one wave at a time on a non-destructive signal (the legacy
+`pass` value is read as `verified`). Close is a **terminal archival batch** (§Policy-4, checklist
+step 6), not the live progress signal — which also removes any exposure to a spurious mid-run
+close flipping a bead out of the open view.
 
 `re-gates[]` is the per-wave union-regate proof (§Supporting → *Re-run the gate on the integrated
 branch*): one entry per wave, appended as it runs — so a crashed or aborted run still leaves the
@@ -163,6 +173,9 @@ stage changes that seam and nothing else.
 - **Gate before close.** A bead closes *only* when its embedded gate is green — the repo's
   **declared gate** (`gate.compile` then `gate.test` from `substrate.yaml`; a bead may override
   inline). Red → stays open, notes attached, re-dispatch or escalate. "Looks done" is not done.
+  Green gate marks the bead `verified` in the run-state (the live done-signal); the **`tbd close`
+  itself is deferred to the terminal batch** (checklist step 6) — gate-before-close still holds,
+  the *close* just rides one archival sync at epic close instead of firing per wave.
 - **File-disjoint waves.** Never run two beads that edit the same file in one wave. Shared files
   (the dependency manifest, the app entrypoint, shared barrels / re-export hubs) are serialized
   across waves, not within.
@@ -218,23 +231,29 @@ the DAG degenerates to one bead per window — the steps below are unchanged, N 
 1. Confirm every bead in the window is ready — all blockers **closed *or merged*** (`tbd ready` /
    `tbd show <id>`; merge, not close, is the unblock signal). A window dispatches only when *all*
    its beads are ready.
-2. `tbd update <id> --status in_progress` for **each bead in the window**.
+2. `tbd update <id> --status in_progress` for **each bead in the window**, and stamp each bead's
+   run-state `outcome: dispatched`.
 3. `git worktree add` off the **current integration tip**; copy `worktree-seed[]` in and run
    `toolchain-pin.install` **once for the window**. Spawn **one group-runner** (worktree-isolated)
    with: the window's **N sequenced bead tuples** (each **Goal / Files / Gate**, env-resolved), the
    `spec:<path>#<section>` back-links, the relevant `CLAUDE.md`, and the standing rule *"no tbd, no
    git push — implement each bead in sequence, run each bead's gate, report a per-bead pass/fail
    ledger + a diff summary."*
-4. Read the returned **per-bead ledger**. Merge the green `pass` prefix → integration branch;
-   **re-gate the integrated tip with the union gate** (§Supporting). Launch newly-unblocked windows
-   (off the updated tip). Then, per merged bead: close — *but* if the bead has a Policy-4 out-of-band
-   gate, **don't close**: `tbd update <id> --notes "merged; awaiting <out-of-band> gate"` and leave
-   it open until that gate passes. Otherwise `tbd close <id> --reason "gate green: <summary>"`.
+4. Read the returned **per-bead ledger**. Merge the green `pass` prefix → integration branch and
+   stamp each merged bead `outcome: merged`; **re-gate the integrated tip with the union gate**
+   (§Supporting) and, on green, advance each to `outcome: verified` — *or* `oob-pending` for a
+   Policy-4 out-of-band bead (`tbd update <id> --notes "merged; awaiting <out-of-band> gate"`).
+   Launch newly-unblocked windows (off the updated tip). **Do not `tbd close` here** — the bead
+   stays `open` in the tracker; `verified` is the live done-signal a watcher renders, and the close
+   is deferred to the terminal batch (step 6). Merge, not close, is the unblock signal, so deferring
+   the close changes no scheduling.
 5. On a **red** bead: it stops its window (remaining beads `unstarted`); keep the red + unstarted
    beads open, `tbd update <id> --notes "<failure>"`, fix or escalate. **Sibling windows continue.**
-6. After the final window's headless merge: finalize `.substrate/execution-state.json`, run a single
-   `tbd sync`, and land the integration branch on trunk as one signed squash commit (Policy-4 beads
-   close later, as their out-of-band gates pass).
+6. After the final window's headless merge: finalize `.substrate/execution-state.json`, then **close
+   every `verified` bead in one batch** — `tbd close <id1> <id2> … --reason "gate green"`, one call,
+   stamping each `outcome: closed` — run the single `tbd sync`, and land the integration branch on
+   trunk as one signed squash commit. Beads left `oob-pending` stay open and close later, as their
+   out-of-band gates pass.
 
 ## Remote / cloud orchestration (dispatch)
 

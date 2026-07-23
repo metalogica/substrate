@@ -186,11 +186,14 @@ function analyze({ nodes, edges }) {
     waves.push(ready);
     remaining = remaining.filter((id) => !ready.includes(id));
   }
-  const isClosed = (id) => byId.get(id)?.status === 'closed';
-  const glyphStatus = (n) =>
-    n.status === 'closed' ? 'closed'
+  const done = (id) => lifecycleDone(ACTIVE_OUTCOMES[id]?.status) || byId.get(id)?.status === 'closed';
+  const glyphStatus = (n) => {
+    const oc = LIFECYCLE_GLYPH[ACTIVE_OUTCOMES[n.id]?.status];   // run-state lifecycle wins over tbd status
+    if (oc) return oc;
+    return n.status === 'closed' ? 'closed'
       : n.status === 'in_progress' ? 'in_progress'
-        : blockers.get(n.id).some((b) => !isClosed(b)) ? 'blocked' : 'open';
+        : blockers.get(n.id).some((b) => !done(b)) ? 'blocked' : 'open';
+  };
   return { byId, blockers, waves, glyphStatus };
 }
 
@@ -205,6 +208,17 @@ function loadExecState(slug) {          // the durable run-state for this epic, 
   try { return jparse(readFileSync(EXEC_STATE_PATH, 'utf8'), {})[slug] || null; } catch { return null; }
 }
 const windowKey = (name) => { const m = /(\d+)/.exec(name); return m ? Number(m[1]) : name; };   // window-2 → 2
+
+// Per-bead lifecycle carried by execution-state.json `outcomes[id].status` — NON-destructive:
+// a bead renders `merged`/`verified` while still OPEN in tbd; `tbd close` is the terminal archival
+// batch at epic close only (agents-parallel-execution-doctrine.md §Grouping & windows). `pass` is
+// the legacy alias for a done bead. This is why the live board can progress without any mid-run close.
+const LIFECYCLE_GLYPH = { dispatched: 'in_progress', merged: 'merged', verified: 'closed', 'oob-pending': 'oob', pass: 'closed', fail: 'blocked', open: 'open' };
+const lifecycleDone = (s) => s === 'merged' || s === 'verified' || s === 'closed' || s === 'pass' || s === 'oob-pending';
+// Outcomes for the epic currently drawn; set each frame in the draw loop before render(), so BOTH
+// the wave-DAG (glyphStatus) and the orchestration pane (paneStatus) show the live lifecycle even
+// though beads stay open in tbd until epic close (merge, not close, is the unblock signal).
+let ACTIVE_OUTCOMES = {};
 
 // Build the partition for a view from the run-state (authoritative) or, failing that, the
 // `group:<window-N>` labels graph-spec stamped (the planned partition, pre-run).
@@ -256,19 +270,15 @@ function classifyRung(windows, total) {
 
 // Map a partition bead to a render glyph-status: run-state outcome first, else live SNAP status.
 function paneStatus(bead) {
-  switch (bead.status) {                              // execution-state outcome vocabulary
-    case 'pass': return 'closed';
-    case 'fail': return 'blocked';
-    case 'open': return 'open';
-    default: break;
-  }
+  const g = LIFECYCLE_GLYPH[bead.status];             // execution-state lifecycle vocabulary
+  if (g) return g;
   const live = SNAP?.rows.get(bead.id)?.status;       // planned source → live tracker status
   return live === 'closed' ? 'closed' : live === 'in_progress' ? 'in_progress' : 'open';
 }
 
 // ---- render -----------------------------------------------------------------
-const GLYPH = { closed: '✓', in_progress: '▶', open: '○', blocked: '⊘' };
-const C = { closed: '\x1b[32m', in_progress: '\x1b[33m', open: '\x1b[90m', blocked: '\x1b[31m', dim: '\x1b[90m', title: '\x1b[37m', bold: '\x1b[1m', rev: '\x1b[7m', unrev: '\x1b[27m', reset: '\x1b[0m' };
+const GLYPH = { closed: '✓', in_progress: '▶', open: '○', blocked: '⊘', merged: '◐', oob: '◑' };
+const C = { closed: '\x1b[32m', in_progress: '\x1b[33m', open: '\x1b[90m', blocked: '\x1b[31m', merged: '\x1b[36m', oob: '\x1b[35m', dim: '\x1b[90m', title: '\x1b[37m', bold: '\x1b[1m', rev: '\x1b[7m', unrev: '\x1b[27m', reset: '\x1b[0m' };
 const shortId = (id) => id.replace(/^[^-]+-/, '');    // drop the tbd prefix, whatever it is
 
 function tabBar(views, active) {
@@ -349,7 +359,7 @@ function render(graph, meta, deltas) {
   }
   const remaining = graph.nodes.length - emitted;
   if (remaining > 0) lines.push(`${C.dim}  … +${remaining} more bead${remaining === 1 ? '' : 's'} (${remainingWavesCount} wave${remainingWavesCount === 1 ? '' : 's'}) — raise with --max${C.reset}`);
-  lines.push(`${C.closed}✓ closed${C.reset}   ${C.in_progress}▶ in_progress${C.reset}   ${C.open}○ open${C.reset}   ${C.blocked}⊘ blocked${C.reset}`);
+  lines.push(`${C.closed}✓ done${C.reset}   ${C.merged}◐ merged${C.reset}   ${C.oob}◑ oob-pending${C.reset}   ${C.in_progress}▶ active${C.reset}   ${C.open}○ open${C.reset}   ${C.blocked}⊘ blocked${C.reset}`);
   lines.push(`${C.dim}waves: ${waves.map((w) => w.length).join(' → ')}   (${graph.nodes.length} beads)${C.reset}`);
   for (const l of orchestrationPane(meta.partition)) lines.push(l);
   return { lines, headerLines, cursorLine };
@@ -671,6 +681,7 @@ function draw() {
     // drilled into a slug (rendered as an ordinary epic under a breadcrumb).
     const isLeaf = view.type === 'epics';
     const effView = isLeaf ? { type: 'epic', slug: drillSlug, key: `epic:${drillSlug}` } : view;
+    ACTIVE_OUTCOMES = effView.type === 'epic' ? (loadExecState(effView.slug)?.outcomes || {}) : {};   // lifecycle source for this frame
     const graph = graphForView(effView);
     const cur = statusMap(graph);
     const prev = prevStatus.get(effView.key);
