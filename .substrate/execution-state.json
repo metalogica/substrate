@@ -47,7 +47,22 @@
         ],
         "result": "green",
         "tip-sha": "86a0a9e"
+      },
+      {
+        "wave": "4a",
+        "commands": ["cd daemon && pnpm exec tsc --noEmit", "cd daemon && pnpm exec vitest run", "bash references/docs-core/docs/scripts/doctrine-lint.sh"],
+        "result": "green",
+        "tip-sha": "53950db"
+      },
+      {
+        "wave": "4b",
+        "commands": ["bash -n scripts/substrate", "cd daemon && pnpm exec tsc --noEmit", "cd daemon && pnpm exec vitest run", "bash references/docs-core/docs/scripts/doctrine-lint.sh"],
+        "result": "green",
+        "tip-sha": "521de24"
       }
+    ],
+    "deviations-fileguard": [
+      {"wave": 4, "reason": "sub-fu3f (creates triage.ts) and sub-35nn (modifies triage.ts+tick.ts) collide on triage.ts; split into consecutive sub-waves 4a(sub-fu3f)->4b(sub-35nn), create-before-modify."}
     ],
     "outcomes": {
       "sub-hat7": { "status": "pass", "commit": "00fc147", "window": "window-1", "wave": 1 },
@@ -58,7 +73,9 @@
       "sub-u5st": { "status": "pass", "commit": "208ff04", "window": "window-6", "wave": 2 },
       "sub-8f85": { "status": "pass", "commit": "c884146", "window": "window-2", "wave": 3 },
       "sub-ex6l": { "status": "pass", "commit": "5f34107", "window": "window-3", "wave": 3 },
-      "sub-bwqh": { "status": "pass", "commit": "5c284b8", "window": "window-4", "wave": 3 }
+      "sub-bwqh": { "status": "pass", "commit": "5c284b8", "window": "window-4", "wave": 3 },
+      "sub-fu3f": { "status": "pass", "commit": "fece684", "window": "window-3", "wave": "4a" },
+      "sub-35nn": { "status": "open", "commit": "c97aeb1", "window": "window-2", "wave": "4b", "note": "merged; headless-green; awaiting out-of-band live drill (Policy-4)" }
     },
     "run-log": ".substrate/runs/serve-v1/serve-v1-20260722-2357/"
   }
