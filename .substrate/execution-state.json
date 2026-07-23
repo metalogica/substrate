@@ -71,6 +71,12 @@
         "commands": ["bash -n scripts/substrate", "cd daemon && pnpm exec tsc --noEmit", "cd daemon && pnpm exec vitest run", "bash references/docs-core/docs/scripts/doctrine-lint.sh"],
         "result": "green",
         "tip-sha": "0ab30c9"
+      },
+      {
+        "wave": 7,
+        "commands": ["grep -q 'substrate serve' README.md && grep -qi permission README.md", "bash -n scripts/substrate", "cd daemon && pnpm exec tsc --noEmit", "cd daemon && pnpm exec vitest run", "bash references/docs-core/docs/scripts/doctrine-lint.sh"],
+        "result": "green",
+        "tip-sha": "0ab138b"
       }
     ],
     "deviations-fileguard": [
@@ -89,7 +95,9 @@
       "sub-fu3f": { "status": "pass", "commit": "fece684", "window": "window-3", "wave": "4a" },
       "sub-35nn": { "status": "open", "commit": "c97aeb1", "window": "window-2", "wave": "4b", "note": "merged; headless-green; awaiting out-of-band live drill (Policy-4)" },
       "sub-x881": { "status": "open", "commit": "596e910", "window": "window-2", "wave": 5, "note": "merged; headless-green; awaiting out-of-band live drill (Policy-4)" },
-      "sub-s6hf": { "status": "pass", "commit": "a520de0", "window": "window-2", "wave": 6 }
+      "sub-s6hf": { "status": "pass", "commit": "a520de0", "window": "window-2", "wave": 6 },
+      "sub-x46j": { "status": "pass", "commit": "449c2bc", "window": "window-7", "wave": 7 },
+      "sub-b6au": { "status": "open", "commit": null, "window": "window-7", "wave": 7, "note": "no code; entirely out-of-band full-lifecycle operator drill (Policy-4)" }
     },
     "run-log": ".substrate/runs/serve-v1/serve-v1-20260722-2357/"
   }
