@@ -3,9 +3,9 @@ type: is
 id: is-01ky6dmntxm3wq4qsa4nc5v0k9
 title: Actualize sessions (batched comments) + merge detection in tick.ts
 kind: task
-status: open
+status: closed
 priority: 2
-version: 5
+version: 6
 labels:
   - epic:serve-v1
   - group:window-2
@@ -16,7 +16,9 @@ dependencies:
     target: is-01ky6dmwp06b4qw21mkfh8befa
 parent_id: is-01ky6dm7cmm0kzaza6379jer1p
 created_at: 2026-07-23T02:42:27.292Z
-updated_at: 2026-07-23T04:53:18.712Z
+updated_at: 2026-07-23T05:28:45.084Z
+closed_at: 2026-07-23T05:28:45.084Z
+close_reason: code merged to main (aa2054a); mock-tested. LIVE DRILL NOT RUN — deferred to operator (comment->fresh session; merge->detected in one tick).
 ---
 Goal: new submitted review / top-level comment -> FRESH session in same worktree, batched unaddressed comments, reply via gh, never merge; dedup replies by comment id before spawn; merge detection (mergedAt or merge-base --is-ancestor) -> tidy hook + close bead with sha (spec section 6). LIVE DRILL (out-of-band): comment on the b9 PR -> fresh session pushes + replies; merge -> detected within one tick.
 Files (modifies): daemon/src/tick.ts

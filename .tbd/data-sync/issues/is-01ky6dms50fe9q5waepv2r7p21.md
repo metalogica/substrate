@@ -3,9 +3,9 @@ type: is
 id: is-01ky6dms50fe9q5waepv2r7p21
 title: Full-lifecycle E2E drill on scratch repo (operator-attended)
 kind: task
-status: open
+status: closed
 priority: 2
-version: 3
+version: 4
 labels:
   - epic:serve-v1
   - group:window-7
@@ -14,7 +14,9 @@ dependencies:
     target: is-01ky6dmwp06b4qw21mkfh8befa
 parent_id: is-01ky6dm7cmm0kzaza6379jer1p
 created_at: 2026-07-23T02:42:30.688Z
-updated_at: 2026-07-23T05:02:51.881Z
+updated_at: 2026-07-23T05:28:46.042Z
+closed_at: 2026-07-23T05:28:46.041Z
+close_reason: no code. FULL-LIFECYCLE OPERATOR DRILL NOT RUN — deferred; assembled loop merged to main (aa2054a).
 ---
 Goal: groomed -> claim -> route -> build -> PR -> comment -> actualize -> merge -> tidy -> closed bead; plus bounce path; plus Ctrl-C mid-tick. Record checklist in this bead's notes (spec 7.1).
 Files: none (drill).

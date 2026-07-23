@@ -3,9 +3,9 @@ type: is
 id: is-01ky6dm7cmm0kzaza6379jer1p
 title: "Epic: Substrate Serve v1 — local-first pull daemon"
 kind: epic
-status: open
+status: closed
 priority: 2
-version: 17
+version: 18
 labels:
   - epic:serve-v1
 dependencies: []
@@ -27,7 +27,9 @@ child_order_hints:
   - is-01ky6dmsxcepw4jkz0ybdkszd9
   - is-01ky6dmwp06b4qw21mkfh8befa
 created_at: 2026-07-23T02:42:12.495Z
-updated_at: 2026-07-23T02:42:34.303Z
+updated_at: 2026-07-23T05:28:47.225Z
+closed_at: 2026-07-23T05:28:47.224Z
+close_reason: "epic:serve-v1 orchestrated + merged to main (aa2054a, PR #1). 14 code beads green; 3 live drills deferred (see per-bead notes)."
 ---
 Spec: docs/tasks/ongoing/serve-v1/serve-v1-spec.md
 Local-first pull daemon: substrate serve/status/tidy/triage. Poll tbd -> claim -> route -> headless lane in sibling worktree -> PR -> actualize comments -> merge-detect -> reap. Sessions are cattle; tbd is the queue; no webhooks; no auto-merge.

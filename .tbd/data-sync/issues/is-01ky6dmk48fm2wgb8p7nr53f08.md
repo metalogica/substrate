@@ -3,9 +3,9 @@ type: is
 id: is-01ky6dmk48fm2wgb8p7nr53f08
 title: Dispatch integration in tick.ts + PR idempotency (gh pr view || create)
 kind: task
-status: open
+status: closed
 priority: 2
-version: 5
+version: 6
 labels:
   - epic:serve-v1
   - group:window-2
@@ -16,7 +16,9 @@ dependencies:
     target: is-01ky6dmwp06b4qw21mkfh8befa
 parent_id: is-01ky6dm7cmm0kzaza6379jer1p
 created_at: 2026-07-23T02:42:24.520Z
-updated_at: 2026-07-23T04:45:38.871Z
+updated_at: 2026-07-23T05:28:43.689Z
+closed_at: 2026-07-23T05:28:43.689Z
+close_reason: code merged to main (aa2054a); mock-tested. LIVE DRILL NOT RUN — deferred to operator (scratch-repo triage->session->PR, kill/rerun no-dup).
 ---
 Goal: wire route->worktree->session into the tick (spec section 4 step 6 + 5.2 failure policy: retry once next tick then bounce with note); PR creation idempotent by observation; stamp bead in-review with PR url. LIVE DRILL (out-of-band): one groomed kind:task bead on a scratch GitHub repo -> substrate triage -> real headless session -> open PR; kill/rerun mid-flow -> no duplicate branch/PR.
 Files (modifies): daemon/src/tick.ts daemon/src/triage.ts
