@@ -1,0 +1,16 @@
+# substrate.yaml — gate contract for this repo (read by /substrate:orchestrate).
+# The daemon/ package is the only gated code surface; docs/skills are linted by
+# doctrine-lint via CI, not this gate.
+gate:
+  compile: "cd daemon && pnpm exec tsc --noEmit"
+  test: "cd daemon && pnpm exec vitest run"
+  lint: "bash references/docs-core/docs/scripts/doctrine-lint.sh"
+
+worktree-seed:
+  - daemon/node_modules
+
+toolchain-pin:
+  install: "cd daemon && pnpm install"
+
+execution:
+  context-budget: 0.4
