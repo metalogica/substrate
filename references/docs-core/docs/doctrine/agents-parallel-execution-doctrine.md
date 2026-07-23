@@ -267,6 +267,49 @@ secrets-needed / runner); `/substrate:adopt` installs it + the `substrate-orches
 Because GitHub `services:`/`runs-on:` are static job keys, that seam is token-substituted at adopt
 time, not computed at runtime.
 
+## Local-first pull consumer (serve)
+
+The orchestrator is not the only automaton that drives the tbd board. `substrate serve` (the
+`daemon/` package) is a **second consumer**: a local-first pull daemon that polls the board, claims
+a groomed bead, routes it, dispatches a headless session in a sibling worktree, opens a PR, and
+reaps on merge. It is a *different* shape from the orchestrated fleet — single-bead lanes, no
+integration branch, human squash-merge — but it **honors the same core invariants and adds three of
+its own**. Codified from what serve-v1 landed (grounded in `daemon/src/`), so the two consumers
+don't drift apart:
+
+- **Single-writer generalizes past the orchestrator.** The single-writer-tracker invariant
+  (Policy-1) is not orchestrator-specific — it binds *any* automaton that writes tbd. The serve
+  daemon is the sole author of its own bead lifecycle transitions at runtime: claim / release /
+  stamp / route / in-review / close all funnel through one adapter (`daemon/src/queue.ts`, a typed
+  shell over `tbd … --json`), and that adapter never parses tbd's on-disk store — the CLI is the
+  only contract. One writer per board region → no race on the shared tracker, same reason as the
+  fleet's single writer.
+- **Sessions are cattle — success is observed, never self-reported.** A headless lane session's own
+  output is **never** trusted as the done-signal. `daemon/src/session.ts` returns only the *raw*
+  outcome (exit code, usage, log path) and carries no `success` field by design; the caller decides
+  success by **observation** — branch pushed ∧ PR open. This is the pull-daemon's form of
+  "gate-before-close / looks-done is not done": the objective signal is external artifact state, not
+  the agent's self-report. `claude -p` behavior drift is therefore a tolerated risk, absorbed by
+  observing the world instead of reading the session's claims.
+- **Recovery reconciles from observed truth only ({tbd, git, gh}).** The daemon's `state.json` is
+  observability, never a source of truth. `daemon/src/tidy.ts` rebuilds the world purely from the
+  three external sources and **never** reconstructs state from a prior `state.json` — so `kill -9`
+  at any instant boots into a consistent world (boot-reap). This is the same "durable, re-verified,
+  never delete-on-read" spirit as `execution-state.json`, taken to its limit: the daemon's own
+  persisted state is discardable because everything is re-derivable from {tbd, git, gh}.
+- **Deterministic routing; the human prior is followed or bounced, never guessed past.**
+  `daemon/src/router.ts` is a **pure** function of a bead's own `kind:` / labels — no model call in
+  the routing decision. It only *follows* the human's prior (route to a lane) or *returns* it
+  (bounce to the board with a reason); it never invents a `kind`. The override-log hook
+  (`logOverride`) is a deliberate no-op **seam** in v1 — named and called on every route arm so the
+  v2 model-assisted path is a one-file edit, isolating the one place a future model could diverge
+  from the human prior.
+
+No auto-merge and no webhooks: tbd is the queue, the loop polls, and a human squash-merges the PR —
+the daemon detects the merge and reaps. The daemon is deliberately replaceable behind these seams
+(session spawn, the router override hook, the observed-truth collectors) so the eventual VPS phase
+is a deployment change, not a rewrite.
+
 ## Why these (the reasoning, so future edits stay faithful)
 
 Single-writer + batch-sync exist because N worktrees writing the same git-backed tracker
