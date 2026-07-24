@@ -1,5 +1,5 @@
 ---
-description: "Install substrate's stack-agnostic docs/doctrine/gate kernel onto an existing repo of ANY language or framework — without scaffolding an opinionated stack. Drops in AGENTS.md (canonical, with a CLAUDE.md symlink), docs/doctrine/ (the enforced manifest + zero-dep doctrine-lint + the agents & parallel-execution meta-doctrines), docs/protocol/sdd/, docs/tasks/, a substrate.yaml gate block wired to YOUR compile/test/lint commands, a pre-commit hook, and a CI workflow — then leaves doctrine-lint green. This is the symmetric opposite of /substrate/migrate (which brings a Gemini prototype INTO the Convex kernel): adopt makes an already-bootstrapped repo satisfy substrate's artifact contract so /substrate/architect-spec, /substrate/execute, /substrate/quick-spec, /substrate/diagnose, and /substrate/add-doctrine work against it. Invoke in the target repo's root."
+description: "Install substrate's stack-agnostic docs/doctrine/gate kernel onto an existing repo of ANY language or framework — without scaffolding an opinionated stack. Drops in AGENTS.md (canonical, with a CLAUDE.md symlink), docs/doctrine/ (the enforced manifest + zero-dep doctrine-lint + the agents & parallel-execution meta-doctrines), docs/protocol/sdd/, docs/tasks/, a substrate.yaml gate block wired to YOUR compile/test/lint commands, a pre-commit hook, a CI workflow, and an initialized tbd bead tracker — then leaves doctrine-lint green. This is the symmetric opposite of /substrate/migrate (which brings a Gemini prototype INTO the Convex kernel): adopt makes an already-bootstrapped repo satisfy substrate's artifact contract so /substrate/architect-spec, /substrate/execute, /substrate/quick-spec, /substrate/diagnose, and /substrate/add-doctrine work against it. Invoke in the target repo's root."
 ---
 
 # /substrate/adopt
@@ -65,7 +65,11 @@ Ask (end each with `[type 'default' to let me decide sensible defaults]`):
 3. **Lint command** — (e.g. `eslint .`, `cargo clippy`, `uv run ruff check .`, `golangci-lint run`).
 4. **Project name** — for `AGENTS.md`'s H1. Default: the repo directory basename.
 5. **One-line description** — for `AGENTS.md`. Default: `A substrate-governed repository.`
-6. **Worktree seed** — "Would a fresh `git worktree` of this repo *fail the gate* because it
+6. **Beads prefix (tbd)** — a 2–8 char **alphabetic** id prefix for this repo's beads (e.g. `sub`,
+   `poi`, `claw`). tbd requires it and it must not be guessed silently: propose one derived from the
+   project name (letters only, lowercased, ≤8 chars) and **confirm** it. Used only on first-time tbd
+   setup (Step 7) — skipped when `.tbd/` already exists.
+7. **Worktree seed** — "Would a fresh `git worktree` of this repo *fail the gate* because it
    lacks a **gitignored** input? (a virtualenv `.venv`, dep dirs `node_modules`, generated
    clients / codegen output, `.env*` files). If so, list those paths, the per-worktree install
    command (e.g. `uv sync`, `pnpm install --frozen-lockfile`), and any env the gate needs
@@ -73,7 +77,7 @@ Ask (end each with `[type 'default' to let me decide sensible defaults]`):
    and propose a `worktree-seed[]` + `toolchain-pin` set, then confirm. This is what
    `/substrate/orchestrate` copies into each worktree before dispatch — declaring it now saves
    hand-seeding on every future fleet run (see `agents-parallel-execution-doctrine.md §Supporting`).
-7. **Cloud dispatch (optional)** — "Do you want `/substrate/dispatch <epic>` to run epics on a GitHub
+8. **Cloud dispatch (optional)** — "Do you want `/substrate/dispatch <epic>` to run epics on a GitHub
    runner (headless `orchestrate --auto --pr` → live PR)? If so, what **services**/**bootstrap** does
    a fresh container need, and which **secrets**?" Default: inspect `.github/workflows/*.yml`; if the
    repo already runs its gate in CI, lift the `services:`/bootstrap into a `ci:` block and confirm;
@@ -154,18 +158,44 @@ chmod +x docs/scripts/doctrine-lint.sh docs/scripts/bead-graph.sh .hooks/pre-com
 git config core.hooksPath .hooks
 ```
 
-### Step 7 — Verify green (the gate for this command)
+### Step 7 — Initialize the beads tracker (tbd) — always
+
+Substrate's execution surface — `/substrate/graph-spec`, `/substrate/orchestrate`,
+`/substrate/dispatch` — is **single-writer over a `tbd` bead tracker**; it is core machinery, not an
+add-on (tbd previously appeared only as an optional handoff note — it is now an install step). adopt
+therefore **always** initializes tbd in the repo.
+
+**Resolve the binary** — prefer a global `tbd`, else run through `npx`:
+
+```bash
+if command -v tbd >/dev/null 2>&1; then TBD="tbd"; else TBD="npx --yes get-tbd@latest"; fi
+```
+
+If neither resolves (offline, no npm/network), **abort with an explanation** rather than hand-rolling
+a `.tbd/` — tbd owns its store format (fail-fast; don't fabricate the tracker).
+
+**Idempotent by filesystem state** — never clobber an existing tracker:
+
+- **`.tbd/config.yml` already exists** → refresh only, never re-prefix: `$TBD setup --auto`.
+- **No `.tbd/`** → first-time setup with the confirmed Step-3 prefix:
+  `$TBD setup --auto --prefix=<prefix>`.
+
+tbd manages its own `.tbd/.gitignore` and its `tbd-sync` data branch — do not edit `.tbd/**` by
+hand. Confirm `.tbd/config.yml` exists (and, first-time, carries `id_prefix: <prefix>`) before continuing.
+
+### Step 8 — Verify green (the gate for this command)
 
 ```bash
 bash docs/scripts/doctrine-lint.sh          # must print: doctrine-lint: ok — 2 doctrines registered …
 test -L CLAUDE.md && [ "$(readlink CLAUDE.md)" = AGENTS.md ] && echo "symlink ok"
 grep -qF agents-doctrine.md AGENTS.md && grep -qF agents-parallel-execution-doctrine.md AGENTS.md && echo "pointers ok"
+test -f .tbd/config.yml && echo "tbd ok"
 ```
 
-All three must pass. If `doctrine-lint` is red, surface its output and fix (usually a pointer the
-user's folded content displaced) before handoff — do not leave the repo red.
+All must pass. If `doctrine-lint` is red, surface its output and fix (usually a pointer the user's
+folded content displaced) before handoff — do not leave the repo red.
 
-### Step 8 — Print handoff
+### Step 9 — Print handoff
 
 ```
 ✔ Substrate docs-core adopted.
@@ -173,7 +203,7 @@ user's folded content displaced) before handoff — do not leave the repo red.
 Installed (stack untouched):
   AGENTS.md (+ CLAUDE.md symlink) · substrate.yaml gate · docs/doctrine/ (manifest + lint +
   agents & parallel-exec doctrines) · docs/protocol/sdd/ · docs/tasks/ongoing/ ·
-  .hooks/pre-commit · .github/workflows/doctrine-lint.yml
+  .tbd/ (beads tracker, prefix <prefix>) · .hooks/pre-commit · .github/workflows/doctrine-lint.yml
   [if cloud dispatch opted in] · .github/workflows/substrate-orchestrate.yml · substrate.yaml ci: block
 
 Gate 1 (mechanical): green.
@@ -191,7 +221,8 @@ Next:
        # raw-cli:        gh secret set ANTHROPIC_API_KEY
   Then:                            /substrate/dispatch <epic>
 
-  (Optional) Set up tbd/beads:     npx get-tbd  → tbd setup --auto --prefix=<name>
+  Beads tracker (tbd) is initialized (prefix <prefix>) — graph a spec with
+  /substrate/graph-spec, then run it with /substrate/orchestrate.
 ```
 
 ## Constraints
@@ -205,6 +236,11 @@ Next:
 - MUST ask the Step-3 **worktree-seed** question rather than silently shipping the empty commented
   stub — declare a populated `worktree-seed[]`/`toolchain-pin` block when the repo's gate needs
   gitignored inputs, so `/substrate/orchestrate` auto-seeds instead of the orchestrator hand-seeding.
+- MUST **always** initialize the `tbd` bead tracker (Step 7) — core execution machinery for
+  `/substrate/graph-spec` · `/substrate/orchestrate` · `/substrate/dispatch`, not optional.
+  Idempotent: first-time `tbd setup --auto --prefix=<prefix>` (prefix from the user, **never** guessed
+  silently), else a `tbd setup --auto` refresh when `.tbd/` already exists — never clobber an existing
+  tracker. If no `tbd`/`npx` is available, abort with an explanation rather than hand-creating `.tbd/`.
 - MUST leave `doctrine-lint.sh` **green** before printing the handoff. A red adopt is a failed adopt.
 - MUST, for cloud dispatch, either fully token-substitute `substrate-orchestrate.yml` + write a
   populated `ci:` block, or **delete** the copied workflow — never leave a `{{TOKEN}}`-valued workflow.
