@@ -316,6 +316,15 @@ don't drift apart:
   at any instant boots into a consistent world (boot-reap). This is the same "durable, re-verified,
   never delete-on-read" spirit as `execution-state.json`, taken to its limit: the daemon's own
   persisted state is discardable because everything is re-derivable from {tbd, git, gh}.
+- **Board membership is derived, never opt-in — the views must partition open work.** Planning
+  holds every open bead *no epic has claimed*; Epics holds the rest. An open bead is therefore on
+  exactly one view and cannot fall between them, so a bead created by a bare `tbd create` — an
+  agent's or a human's — is visible without anyone remembering a label. This is not a rendering
+  preference: the board is a *triage* surface, so a bead missing from it reads as "no outstanding
+  work" rather than "work you cannot see", and the failure is silent. Any opt-in membership filter
+  reintroduces that class of bug (one did: an `inbox` label only the TUI's capture key applied hid
+  every CLI-created bead). Corollary: a view that filters MUST state what it excluded — an empty
+  list that cannot distinguish "nothing to triage" from "everything is hidden" is a lie by default.
 - **Deterministic routing; the human prior is followed or bounced, never guessed past.**
   `daemon/src/router.ts` is a **pure** function of a bead's own `kind:` / labels — no model call in
   the routing decision. It only *follows* the human's prior (route to a lane) or *returns* it

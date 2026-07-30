@@ -11,7 +11,9 @@
 //
 // Nav (interactive TTY only) — views are a FIXED two, lateral switching only:
 //   Planning · Epics   ·   Tab / Shift-Tab or 1–2 to switch · Esc backs out / exits · Ctrl-C quits.
-// (Orphan/closed beads aren't surfaced — use the tbd CLI directly for those.)
+// Planning holds every open bead no epic has claimed, Epics holds the rest — so the two views
+// PARTITION open work and nothing can hide between them. (Closed beads aren't surfaced — use
+// the tbd CLI directly for those.)
 // Epics is a drill target, not a flat tab-per-epic: it lists every active epic (newest first),
 // and → / Enter drills into one epic's beads (← / Esc pops back). Arrows are HIERARCHICAL
 // (drill in/out), never lateral. `/` fuzzy-filters the epic index.
@@ -28,6 +30,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { partitionBoard } from './board.mjs';
 
 const pexec = promisify(execFile);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -399,20 +402,17 @@ function clipToViewport({ lines, headerLines, cursorLine }) {
   return [...header, ...win, bar].join('\n');
 }
 
-// ---- board: flat capture/triage surface (inbox beads, no topology) ----------
-//   Membership = SNAP rows labelled `inbox`, open/in_progress. Two stacked sections:
-//   UNGROOMED (no `groomed` label) then GROOMED. Sorted by priority then id. A manual
-//   staging surface — it never writes into an epic (endogenous-reconfiguration rule).
+// ---- board: flat triage surface (unfiled beads, no topology) ----------------
+//   Membership = MEMBERSHIP.unassigned — open beads no epic has claimed — so the board is
+//   the exact complement of epic membership and union(Planning, Epics) covers every open
+//   bead. Two stacked sections: UNGROOMED (no `groomed` label) then GROOMED, by priority
+//   then id. A manual staging surface — it never writes into an epic (endogenous-
+//   reconfiguration rule), and now cannot even display an orchestrator-owned bead.
+//   The predicate itself lives pure in board.mjs (see its header for why).
 //   Returns { lines, headerLines, cursorLine } so it flows through clipToViewport like render().
 function boardRows() {
-  if (!SNAP) return { un: [], gr: [], flat: [] };
-  const onBoard = [...SNAP.rows.values()].filter(
-    (r) => (r.labels || []).includes('inbox') && (r.status === 'open' || r.status === 'in_progress'));
-  const groomed = (r) => (r.labels || []).includes('groomed');
-  const byPri = (a, b) => (a.priority ?? 2) - (b.priority ?? 2) || (a.id < b.id ? -1 : 1);
-  const un = onBoard.filter((r) => !groomed(r)).sort(byPri);
-  const gr = onBoard.filter(groomed).sort(byPri);
-  return { un, gr, flat: [...un, ...gr] };
+  if (!SNAP) return { un: [], gr: [], flat: [], filedOpen: 0 };
+  return partitionBoard(SNAP.rows.values(), MEMBERSHIP?.unassigned || new Set());
 }
 
 // ---- inline single-line editor (shared by `n` new-task capture and `r` title rename) ---------
@@ -451,18 +451,24 @@ function editLine(label, s) {
 
 function renderBoard(meta) {
   const spin = ['⟳', '⟲'][meta.frame % 2];
-  const { un, gr, flat } = boardRows();
+  const { un, gr, flat, filedOpen } = boardRows();
   boardCursor = Math.max(0, Math.min(flat.length ? flat.length - 1 : 0, boardCursor));
   const selId = meta.interactive && flat.length ? flat[boardCursor].id : null;
   const lines = [''];
   const bar = tabBar(meta.views, meta.active);
   if (bar) { lines.push(bar); lines.push(''); }
   const nav = meta.interactive ? ` ${C.dim}· Tab/1-2 view · ↑↓ select · n new · ? help · Esc exit${C.reset}` : '';
-  lines.push(`${C.bold}unfiled tasks${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
+  lines.push(`${C.bold}unfiled tasks${C.reset} ${C.dim}· not in any epic${C.reset}   ${C.dim}${spin} live · ${meta.updates} update${meta.updates === 1 ? '' : 's'}${C.reset}${nav}`);
   lines.push('');
   const headerLines = lines.length;
   let cursorLine = -1;
-  if (!flat.length && !capture) lines.push(`${C.dim}(no unfiled tasks — press n to add)${C.reset}`);
+  // Say what is excluded. A triage board that renders an empty/short list without naming what
+  // it filtered out cannot distinguish "nothing to triage" from "everything is hidden" — and a
+  // reader defaults to the first. `filedOpen` makes the two states tell themselves apart.
+  const filed = filedOpen ? `${filedOpen} open filed under epics` : '';
+  if (!flat.length && !capture) {
+    lines.push(`${C.dim}(${filed ? `nothing to triage — ${filed} · ` : 'no unfiled tasks — '}press n to add)${C.reset}`);
+  }
   const section = (label, rows) => {
     lines.push(`${C.dim}── ${label} · ${rows.length} ${'─'.repeat(Math.max(0, 30 - label.length))}${C.reset}`);
     let shown = 0;
@@ -482,6 +488,7 @@ function renderBoard(meta) {
   section('UNGROOMED', un);
   section('GROOMED', gr);
   lines.push('');
+  if (flat.length && filed) lines.push(`${C.dim}${filed} — see Epics${C.reset}`);
   if (capture) lines.push(editLine('new', capture));
   if (renaming) lines.push(editLine('title', renaming));
   lines.push(`${C.dim}n new · e body · r title · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
@@ -581,7 +588,7 @@ function renderHelp(meta) {
   row('Esc', 'back out one level; from the top level, exit (flushes pending sync)');
   row('Ctrl-C', 'quit immediately (no flush)');
   lines.push('');
-  head('planning · unfiled tasks');
+  head('planning · unfiled tasks (every open bead no epic has claimed)');
   row('↑ ↓  j k', 'move cursor');
   row('n', 'new task — type title, Enter commits (stays), Esc exits');
   row('Enter', 'open bead detail');
@@ -798,7 +805,10 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
   const handleKey = async (k) => {
     // (1) capture mode owns every key while active
     if (capture) {
-      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '-l', 'inbox', '--no-sync']); capture.buf = ''; capture.pos = 0; draw(); }
+      // No membership label: board membership is derived (unfiled = no epic claim), so capture
+      // creates exactly what a bare `tbd create` creates. Same path for TUI and CLI, by design —
+      // the asymmetry between them was what made CLI-created beads invisible here.
+      if (k === '\r' || k === '\n') { const t = capture.buf.trim(); if (t) await boardWrite(['create', t, '--no-sync']); capture.buf = ''; capture.pos = 0; draw(); }
       else if (k === '\x1b') { capture = null; await flushSync(); draw(); }               // Esc — exit + flush
       else if (k === '\x03') { quitFast(); }                                            // Ctrl-C
       else if (lineEdit(capture, k)) { draw(); }                                          // arrows / Home-End / word / insert-delete

@@ -47,17 +47,24 @@ The `n` / `r` prompts are full inline editors (arrow keys, Home/End, word jumps,
 
 ## Board — unfiled tasks (capture + triage)
 
-A keyboard-driven "brain dump" inbox for todos you spot while working — separate from the epic
-DAG views and **outside** orchestration. Flat two sections: **UNGROOMED** (raw dumps) then
-**GROOMED** (fleshed out, ready to hand off). It's a *staging area* — the board never writes into
-an `epic:` bead (the orchestrator owns those; exogenous edits are entropy).
+A keyboard-driven triage surface for everything not yet filed under an epic — todos you spot while
+working, beads an agent filed mid-session, anything awaiting a decision. Flat two sections:
+**UNGROOMED** (raw) then **GROOMED** (fleshed out, ready to hand off). It's a *staging area* — the
+board never writes into an `epic:` bead (the orchestrator owns those; exogenous edits are entropy).
 
-Membership is two free-form tbd labels — **no schema change**:
+**Membership is derived, not opted into:** a bead is on the board iff it is open/in_progress and
+**no epic has claimed it**. So Planning and Epics *partition* open work — every open bead is on
+exactly one of them — and a bead created by a bare `tbd create`, at the CLI or by an agent, shows
+up here with no label to remember. (It used to gate on an opt-in `inbox` label that only the `n`
+key applied, which silently hid every CLI-created bead; `inbox` is now inert and needs no cleanup.)
+When the board excludes open beads it says so — `8 open filed under epics — see Epics` — so an
+empty list can't be mistaken for an empty tracker.
 
-- **`inbox`** — a bead is on the board iff it has `inbox` and is open/in_progress. Opt-in, so the
-  board shows only what you deliberately dumped, not every non-epic bead.
-- **`groomed`** — the GROOMED column toggle (named to avoid `tbd ready`, which means
-  dependency-unblocked — a different axis).
+One free-form label remains, and it's a **human** gate — **no schema change**:
+
+- **`groomed`** — the GROOMED section toggle (named to avoid `tbd ready`, which means
+  dependency-unblocked — a different axis). `substrate serve` claims groomed beads and runs them
+  headlessly, so grooming is always a human keypress; agents must never self-apply it.
 
 Board keys: **↑/↓ (j/k)** move · **n** new task (type title, Enter commits + stays, Esc exits) ·
 **r** rename title inline · **Enter** open detail · **e** edit body in `$EDITOR` · **space** toggle

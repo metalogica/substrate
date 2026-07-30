@@ -34,6 +34,38 @@ Every change is bound to the doctrines registered in `docs/doctrine/doctrine-man
 
 Add your own stack/domain doctrines with `/substrate:add-doctrine`; each self-registers in the manifest.
 
+## Beads you create are visible — and where
+
+`substrate tasks` (the bead TUI) has two views, and they **partition** open work — every open
+bead is on exactly one of them, so nothing you create can hide:
+
+- **Planning** — every open bead **no epic has claimed**. Two sections: **UNGROOMED** (raw) then
+  **GROOMED**.
+- **Epics** — beads filed under an `epic:<slug>`, rendered as that epic's DAG.
+
+**A bead you create with a bare `tbd create` lands in Planning · UNGROOMED. That is the default,
+and it needs no label** — membership is *derived* from the absence of an epic claim, not opted
+into. There is nothing to remember and therefore nothing to forget. Consequences for you:
+
+| You want | Do |
+| --- | --- |
+| Track discovered work / a TODO / a bug | `tbd create "<title>" --type bug\|task --file <body>` — it appears in Planning · UNGROOMED |
+| File it under an in-flight epic instead | add `-l "epic:<slug>"` — it moves to that epic's DAG and **leaves** Planning |
+| Get it off the board | close it, or file it under an epic. Nothing else removes it. |
+
+Two rules when you create one:
+
+- **Give it a real title and a body.** The board shows the title alone; a human triaging a
+  20-row board decides from that line. Put the context — repro, file paths, why it matters — in
+  the body via `tbd create --file <tmp>` (write a tempfile, unlink after). "Fix the thing" is
+  a bead that gets deleted rather than done.
+- **Never apply `groomed` yourself.** That label is the **human hand-off gate**: `substrate serve`
+  claims groomed beads and runs them headlessly. An agent grooming its own bead injects unreviewed
+  work into that queue. Grooming is a human keypress in the TUI, always.
+
+Do **not** add labels to a bead an epic already owns, or write into `epic:` beads at all — the
+orchestrator is the single writer for those (see `agents-parallel-execution-doctrine.md`).
+
 <!-- BEGIN TBD INTEGRATION -->
 ---
 title: tbd Workflow
