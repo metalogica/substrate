@@ -66,7 +66,13 @@ One free-form label remains, and it's a **human** gate — **no schema change**:
   dependency-unblocked — a different axis). `substrate serve` claims groomed beads and runs them
   headlessly, so grooming is always a human keypress; agents must never self-apply it.
 
-Board keys: **↑/↓ (j/k)** move · **n** new task (type title, Enter commits + stays, Esc exits) ·
+The board renders **every** row and scrolls (it is a cursored flat list, so `--max` does not
+truncate it the way it caps the wave views) — on a large tracker use **Ctrl-D/Ctrl-U** and **g/G**
+rather than walking it with `j`. Writes are **serialized**: while one is in flight the footer shows
+`⋯ writing to tbd — keys paused` and the mutation keys are ignored, because tbd's store lock
+serializes concurrent writes anyway and queueing them behind a 30 s timeout reads as a hang.
+
+Board keys: **↑/↓ (j/k)** move · **Ctrl-D/Ctrl-U** half-page · **n** new task (type title, Enter commits + stays, Esc exits) ·
 **r** rename title inline · **Enter** open detail · **e** edit body in `$EDITOR` · **space** toggle
 groomed · **x** kill · **[ / ]** priority less/more · **t** cycle kind · **g/G** top/bottom · **?** full help.
 

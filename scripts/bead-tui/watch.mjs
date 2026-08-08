@@ -44,7 +44,8 @@ const EPIC = flag('--tbd');                                   // pin a single ep
 const FIXTURE_ARG = flag('--fixture');                        // pin a fixture file
 const DEFAULT_FIXTURE = join(HERE, 'fixture.json');
 const INTERVAL = Number(flag('--interval')) || 800;           // idle gap between (self-paced) polls
-const MAX_NODES = Number(flag('--max')) || 60;                    // max beads rendered per view (--max <n> to override)
+const MAX_NODES = Number(flag('--max')) || 60;                    // max beads rendered per WAVE view (--max <n>); the
+                                                                  // board is cursored, so it scrolls instead of truncating
 
 function die(msg) { restore(); process.stderr.write(`bead-tui: ${msg}\n`); process.exit(1); }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -469,12 +470,18 @@ function renderBoard(meta) {
   if (!flat.length && !capture) {
     lines.push(`${C.dim}(${filed ? `nothing to triage — ${filed} · ` : 'no unfiled tasks — '}press n to add)${C.reset}`);
   }
+  // The board renders EVERY row — no MAX_NODES truncation. `clipToViewport` windows the frame
+  // by visual rows and scrolls the cursor into view, which is the correct mechanism for a flat
+  // list with a cursor; MAX_NODES is a guard for the *wave* views, where topology (not a cursor)
+  // decides what's on screen. Truncating here silently decoupled the two: only 60 rows were drawn
+  // while the cursor ranged over all `flat.length`, so past row 60 `cursorLine` stayed -1, the
+  // viewport snapped back to the top, and the mutation hotkeys went on acting on `flat[boardCursor]`
+  // — a bead the user could no longer see. A triage surface must be able to REACH everything it
+  // counts; a row you can select but never render is the same "work you cannot see" failure as a
+  // row the filter dropped.
   const section = (label, rows) => {
     lines.push(`${C.dim}── ${label} · ${rows.length} ${'─'.repeat(Math.max(0, 30 - label.length))}${C.reset}`);
-    let shown = 0;
     for (const r of rows) {
-      if (shown >= MAX_NODES) { lines.push(`${C.dim}   … +${rows.length - shown} more — raise with --max${C.reset}`); break; }
-      shown++;
       const gs = r.status === 'in_progress' ? 'in_progress' : 'open';
       const sel = r.id === selId;
       if (sel) cursorLine = lines.length;
@@ -491,6 +498,8 @@ function renderBoard(meta) {
   if (flat.length && filed) lines.push(`${C.dim}${filed} — see Epics${C.reset}`);
   if (capture) lines.push(editLine('new', capture));
   if (renaming) lines.push(editLine('title', renaming));
+  // A write is seconds long on a big tracker. Say so, or the screen is indistinguishable from a hang.
+  if (writing) lines.push(`${C.in_progress}⋯ writing to tbd — keys paused${C.reset}`);
   lines.push(`${C.dim}n new · e body · r title · space groom · x kill · [ ] prio · t kind · ? help${C.reset}`);
   return { lines, headerLines, cursorLine };
 }
@@ -590,6 +599,7 @@ function renderHelp(meta) {
   lines.push('');
   head('planning · unfiled tasks (every open bead no epic has claimed)');
   row('↑ ↓  j k', 'move cursor');
+  row('Ctrl-D  Ctrl-U', 'half-page down / up');
   row('n', 'new task — type title, Enter commits (stays), Esc exits');
   row('Enter', 'open bead detail');
   row('r', 'rename — edit the title inline (Enter saves, Esc cancels)');
@@ -646,6 +656,7 @@ let boardCursor = 0;                        // selected row within the board's f
 let capture = null;                         // { buf } while capturing a new task title; null otherwise
 let renaming = null;                        // { id, buf } while editing an existing bead's title inline; null otherwise
 let dirty = false;                          // pending --no-sync board writes awaiting a flush
+let writing = false;                        // a board write is in flight (gates hotkeys, shows the pending line)
 let showHelp = false;                       // ? overlay: full keyboard reference
 let epicCursor = 0;                         // selected row within the epics index
 let drillSlug = null;                       // when in the Epics view: null = index, slug = drilled into that epic's beads
@@ -733,11 +744,28 @@ function draw() {
 //   Every write is a local --no-sync tbd commit; refreshSnapshot() gives immediate liveness and
 //   the poll reconciles authoritative order. dirty tracks unsynced writes; flushSync() batches
 //   the single `tbd sync` on capture-mode exit and on quit.
+//   Writes are SERIALIZED and the frame repaints before the await. Two reasons, both of which
+//   read to the user as "the TUI froze and I had to restart it" on a large tracker:
+//     1. No feedback. `tbd <write>` is ~2-4s and the `refreshSnapshot()` behind it re-fetches the
+//        whole list (>1 MB on a 700-bead repo), so a single keypress left a dead, unchanged screen
+//        for 5-12s with nothing to say it was working.
+//     2. No serialization. The stdin handler starts a fresh async chain per `data` event, so a
+//        mashed key spawned CONCURRENT tbd processes that then contend on tbd's git-backed store
+//        lock — each with a 30s TBD_TIMEOUT. N impatient keypresses compound into an N×lock-wait
+//        stall, which is an unrecoverable-looking hang rather than a slow one.
+//   `writing` is also read by the key handler, which drops mutation hotkeys while a write is in
+//   flight — the queue must never grow from impatience. Data-bearing writes (capture, rename) are
+//   not dropped: they chain, because losing a bead the user typed is worse than waiting for it.
+let writeChain = Promise.resolve();
 async function boardWrite(args) {
-  dirty = true;
-  await tbd(args);
-  await refreshSnapshot();
-  draw();
+  const run = writeChain.then(async () => {
+    writing = true; dirty = true;
+    draw();                                                   // paint "working…" BEFORE the await
+    try { await tbd(args); await refreshSnapshot(); }
+    finally { writing = false; draw(); }
+  });
+  writeChain = run.catch(() => {});                           // a failed write must not poison the chain
+  return run;
 }
 async function flushSync() { if (dirty) { dirty = false; await tbd(['sync']); } }
 
@@ -847,9 +875,14 @@ if (process.stdin.isTTY) {                  // instant, because the event loop i
       if (k === '\x1b') { await quit(); return; }             // Esc at the top level — graceful exit (flushes)
       if (k === '\x1b[A' || k === 'k') { boardCursor = Math.max(0, boardCursor - 1); draw(); return; }
       if (k === '\x1b[B' || k === 'j') { boardCursor = Math.min(Math.max(0, flat.length - 1), boardCursor + 1); draw(); return; }
+      if (k === '\x04') { boardCursor = Math.min(Math.max(0, flat.length - 1), boardCursor + halfPage()); draw(); return; }  // Ctrl-D · half-page down
+      if (k === '\x15') { boardCursor = Math.max(0, boardCursor - halfPage()); draw(); return; }                            // Ctrl-U · half-page up
       if (k === 'g') { boardCursor = 0; draw(); return; }
       if (k === 'G') { boardCursor = Math.max(0, flat.length - 1); draw(); return; }
       if (k === 'n') { capture = { buf: '', pos: 0 }; draw(); return; }
+      // Drop mutation hotkeys while a write is in flight. Navigation stays live (it's local), but
+      // queueing writes from a mashed key is what turns a slow board into an unrecoverable stall.
+      if (writing && (k === ' ' || k === 'x' || k === '[' || k === ']' || k === 't')) return;
       if (sel) {
         const groomed = (sel.labels || []).includes('groomed');
         if (k === '\r' || k === '\n') { await openDetail(sel.id); return; }
