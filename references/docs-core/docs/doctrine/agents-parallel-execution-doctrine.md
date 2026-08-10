@@ -248,7 +248,12 @@ stage changes that seam and nothing else.
   append `{wave, commands, result, tip-sha}` to `execution-state.json` as each wave re-gates (the
   file is written *incrementally*, so an aborted run still carries the proof). A wave with no recorded
   re-gate is a protocol violation.
-- **Worktree hygiene.** Remove a worktree after its merge; an unchanged worktree auto-cleans.
+- **Worktree hygiene — and branch hygiene.** Remove a worktree after its merge; an unchanged
+  worktree auto-cleans. **Reap the branches too**: delete each `<window-branch>` as it merges, and
+  delete `feat/<epic-slug>` once the squash has landed on trunk. Nothing downstream reads them —
+  the squash carries the content and `execution-state.json` carries the history — so left alone
+  they accumulate one dead ref per window per epic and make the branch list useless for finding
+  live work.
 - **External blockers are edges, not prose.** If a bead waits on work outside the epic,
   model it as a dependency on a real bead (e.g. a downstream endpoint → its upstream migration)
   so the tracker keeps it out of `ready`.
@@ -290,7 +295,8 @@ the DAG degenerates to one bead per window — the steps below are unchanged, N 
    the close changes no scheduling.
 5. On a **red** bead: it stops its window (remaining beads `unstarted`); keep the red + unstarted
    beads open, `tbd update <id> --notes "<failure>"`, fix or escalate. **Sibling windows continue.**
-6. After the final window's headless merge: finalize `.substrate/execution-state.json`, then **close
+6. After the final window's headless merge: finalize `.substrate/execution-state.json`, **reap the
+   debris** (window branches on merge, `feat/<epic-slug>` once the squash lands), then **close
    every `verified` bead in one batch** — `tbd close <id1> <id2> … --reason "gate green"`, one call,
    stamping each `outcome: closed` — run the single `tbd sync`, and land the integration branch on
    trunk as one signed squash commit. Beads left `oob-pending` stay open and close later, as their
