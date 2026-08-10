@@ -5,13 +5,13 @@ title: "graph-spec: infer blocked-by edge when two beads share a write-target fi
 kind: bug
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/tasks/ongoing/serve-v1/serve-v1-spec.md
 labels:
   - src:synth-serve-v1
 dependencies: []
 created_at: 2026-07-23T16:56:05.883Z
-updated_at: 2026-07-23T16:56:05.883Z
+updated_at: 2026-08-10T19:09:21.888Z
 ---
 ## Why now (session signal)
 During epic:serve-v1 orchestration (Wave 4), sub-fu3f (creates daemon/src/triage.ts) and sub-35nn (modifies triage.ts + tick.ts) were placed in the SAME wave by graph-spec, yet both write triage.ts. The orchestrator's runtime file-disjoint guard caught the collision and split them into consecutive sub-waves (4a create -> 4b modify), but graph-spec should have inferred that blocked-by edge itself.
