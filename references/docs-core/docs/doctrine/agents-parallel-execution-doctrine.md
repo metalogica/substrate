@@ -112,6 +112,16 @@ wave**, finalized before the trunk squash):
 }
 ```
 
+**The `<epic>` entry is created before the first dispatch, not at epic close.** "Written
+incrementally per wave" is only true if something creates the entry to write into — otherwise every
+incremental write is a no-op against a missing key and the whole ledger materialises (or doesn't) at
+the end. Initialise `{run-id, partition, re-gates: [], outcomes: {}}` as a numbered pre-dispatch
+action, before any worktree exists. The failure this prevents is not hypothetical: a 12-window run
+(sky-journal, 2026-08-04) merged real work, wrote its deviation log, and recorded **no
+`execution-state.json` entry at all**, because entry creation lived only in the epic-close step the
+run never reached. Corollary for the appending steps: if the entry is missing when you go to append
+a re-gate, you skipped the initialisation — stop and fix that, do not create it late.
+
 **`outcomes[id].status` is a non-destructive lifecycle** — `dispatched → merged → verified → closed`
 on the happy path, `oob-pending` for a merged bead awaiting an out-of-band gate, `fail` for one
 stopped mid-window. The orchestrator advances it at each point it gains knowledge (dispatch, merge,
@@ -228,6 +238,9 @@ requires that they be honored.
 The dispatch unit is the **window** (a `group:<window-N>`), not the bead. (Absent `group:` labels
 the DAG degenerates to one bead per window — the steps below are unchanged, N just equals 1.)
 
+0. **Before any worktree exists**, initialise the run-state entry for this epic in
+   `.substrate/execution-state.json`: `{run-id, partition, re-gates: [], outcomes: {}}`. Everything
+   below appends to it.
 1. Confirm every bead in the window is ready — all blockers **closed *or merged*** (`tbd ready` /
    `tbd show <id>`; merge, not close, is the unblock signal). A window dispatches only when *all*
    its beads are ready.

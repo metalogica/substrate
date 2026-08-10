@@ -119,15 +119,31 @@ broader than `substrate.yaml`'s literal `gate` block. (If a bead's gate is a str
 `gate.*`, `/substrate:graph-spec` will have tagged it `gate-scope: partial` — a reminder that its
 green is partial and only the union re-gate authorizes the merge.)
 
-### Step 4. Setup — integration branch + unattended signing
+### Step 4. Setup — integration branch, run-state anchor, unattended signing
 
 ```bash
 git switch -c feat/<epic-slug>   # or: git switch feat/<epic-slug>   (reuse if it exists)
 git config commit.gpgsign false  # repo-local: subagent worktree commits can't sign interactively
 ```
 
-Cut/reuse `feat/<epic-slug>` from trunk. Disabling signing is why the epic-close step **must**
-restore it unconditionally (doctrine §Supporting → *Unattended signing*).
+**4.1 Cut/reuse `feat/<epic-slug>`** from trunk.
+
+**4.2 Initialise the run-state entry — before any worktree exists.** Write
+`.substrate/execution-state.json`'s `<epic>` key now:
+
+```json
+{ "<epic>": { "run-id": "<epic>-<YYYYMMDD-HHMM>", "partition": { "window-1": ["…"] },
+              "re-gates": [], "outcomes": {}, "run-log": ".substrate/runs/<epic>/<run-id>/" } }
+```
+
+Every later write (5c.1 `dispatched`, 5e `re-gates[]`, 5f `merged`/`verified`) **appends to this
+entry**. Skip this and each of those is a write into a missing key, so an aborted run leaves no
+ledger at all — which is exactly what happened on the 12-window sky-journal run (2026-08-04): real
+merged work, a written deviation log, and no `execution-state.json` entry, because entry creation
+lived only in Step 6.1 and the run never reached it.
+
+**4.3 Signing.** Disabling signing is why the epic-close step **must** restore it unconditionally
+(doctrine §Supporting → *Unattended signing*).
 
 ### Step 5. Per wave, in order
 
@@ -174,7 +190,9 @@ only the backend suite while a frontend `vitest` ran per-bead). Re-gate with `ga
 whole suite the wave exercised never gets composed-checked — so a green-reported wave can sit on a
 red integrated tip (doctrine §Supporting → *Re-run the gate on the integrated branch*; FMEA #4). Two
 independently-green branches can still fail composed. **Record the wave's re-gate into
-`.substrate/execution-state.json` as it runs** — `{wave, commands: [...], result, tip-sha}` (Step 6;
+`.substrate/execution-state.json` as it runs** — and if the `<epic>` entry is *missing* when you go
+to append, you skipped Step 4.2: stop and fix that rather than creating the entry late, because
+everything the run has already recorded went nowhere — — `{wave, commands: [...], result, tip-sha}` (Step 6;
 the file is written **incrementally per wave**, not only at close, so an aborted run still leaves the
 evidence). **Red = composition failure: halt the wave transition, attach notes, fix before any
 dependent dispatches.** A wave with no recorded re-gate entry is a protocol violation.
@@ -239,6 +257,7 @@ on OpenCode. Do not hardwire Workflow as the sole mechanism.
 - MUST read the DAG from `bead-graph.sh --epic <slug>`; MUST NOT re-derive it. Fail-fast on a parse error before any worktree exists.
 - MUST abort with an explanation if `substrate.yaml`'s `gate` block is missing — never probe a toolchain.
 - MUST warn (not abort) before dispatch when `worktree-seed` is undeclared but `.gitignore` names build/dep paths the gate plausibly needs, and pause for confirm — never silently dispatch into worktrees that will fail the gate on an unseeded input (no-silent-fallback).
+- MUST initialise the `<epic>` run-state entry before the first dispatch (Step 4.2). A run that appends re-gates into a missing key leaves no ledger at all.
 - MUST honor the **single-writer** invariant: only the orchestrator runs `tbd update`/`close`/`sync` or `git push`. Subagents receive Goal/Files/Gate inlined and return a result.
 - MUST branch each bead worktree off the **current integration tip**, merge-on-green, and **re-gate the integrated tip each wave with the union of `gate.*` and every per-bead gate exercised that wave** — the union re-gate (never `gate.*` alone) is the sole merge-authorizing signal, and each wave's `{wave, commands, result, tip-sha}` MUST be recorded incrementally in `.substrate/execution-state.json`. A wave with no recorded re-gate entry is a protocol violation.
 - MUST enforce **file-disjoint** waves (pairwise-Files guard) beyond graph-spec's edges.
