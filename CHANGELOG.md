@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`/substrate:execute` Step-0 routing** — detects a graphed epic and delegates to `orchestrate` only when a wave has **≥3 file-disjoint beads** AND a tracker is configured AND the user confirms. Fail-safe default = sequential; never silently fans out worktrees.
 - **OpenCode parity** — `opencode/command/substrate/orchestrate.md` (Task-tool dispatch, sequential fallback documented) + `opencode/agent/bead-implementer.md` (`mode: subagent`, `permission.task: deny`). Skill count 11 → 12 across `plugin.json`, `marketplace.json`, `CLAUDE.md`, `README.md`; skills↔commands parity audit remains empty; `doctrine-lint` green. Optional one-line pointer added to the parallel-execution doctrine's Roles section (abstract-role framing preserved).
 
+### Removed
+
+- **`substrate ui` — the tmux workspace** — the one-window tmux workspace (board / specs / interactive-agent windows on substrate's own tmux server socket) is removed, along with `scripts/substrate-ui.sh`, `scripts/substrate-tmux.conf`, `scripts/substrate-ui-help.txt`, and the `ui` verb in `scripts/substrate`. It was never specced, graphed, or gated — it entered trunk inside the serve-v1 squash (`aa2054a`), an epic whose brief never mentions it — and it had zero wiring to the daemon it was justified as an "operator hub" for. `substrate tasks` (the bead-DAG TUI) is unaffected; the board's tmux-only auto-restart wrapper goes with it, since exiting to your shell on `Esc` is the correct behavior outside a dedicated pane.
+
 ## [0.5.0] — 2026-07-07
 
 ### Added

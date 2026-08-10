@@ -28,9 +28,6 @@ case "$sub" in
   tasks)
     exec "$root/scripts/bead-tui.sh" "$@"
     ;;
-  ui)
-    exec "$root/scripts/substrate-ui.sh" "$@"
-    ;;
   serve)
     exec npx -y tsx "$root/daemon/src/serve.ts"  --repo "$PWD" "$@"
     ;;
@@ -50,10 +47,6 @@ substrate — substrate tooling CLI
 usage:
   substrate tasks [--tbd <slug>] [--fixture <path>] [--once]
       live bead TUI for the project in your current directory
-  substrate ui
-      one-window tmux workspace for the project in your current directory
-      (board / specs / agent windows on substrate's own tmux server;
-       M-1..M-3 jump, M-n new agent window, prefix-d detach)
   substrate serve
       local-first pull daemon: poll the tbd board, claim groomed beads, build
       them as headless sessions in sibling worktrees, open PRs (serve-v1)
@@ -66,7 +59,7 @@ usage:
 EOF
     ;;
   *)
-    echo "substrate: unknown command '$sub' (try: substrate tasks, ui, serve, status, tidy, triage)" >&2
+    echo "substrate: unknown command '$sub' (try: substrate tasks, serve, status, tidy, triage)" >&2
     exit 2
     ;;
 esac
