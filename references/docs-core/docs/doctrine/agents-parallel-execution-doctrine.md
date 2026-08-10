@@ -202,11 +202,23 @@ stage changes that seam and nothing else.
 - **Pin the toolchain in the dispatch prompt.** A worktree has no shell-activated version manager
   (mise/asdf/nvm/pyenv/…). Hand subagents the exact gate command with fully-resolved env from
   `substrate.yaml`'s `toolchain-pin.env` + `gate.*`, not a bare command that finds no toolchain.
-- **Unattended signing.** Interactive commit signing (1Password/GPG/SSH) blocks or fails on a
-  subagent's commits. Set `commit.gpgsign false` for the run (bead + integration branches), then
-  land the result on trunk as **one signed commit** (`git merge --squash` + a signed commit) and
-  **restore `commit.gpgsign true`**. Squash also keeps the unsigned bead commits out of trunk
-  history. Never leave signing disabled past the run.
+- **Unattended signing — scope it to the worktrees, never to the repo.** Interactive commit
+  signing (1Password/GPG/SSH) blocks or fails on a subagent's commits, so the fleet's commits must
+  be unsigned. Do **not** get there by flipping the repo-local `commit.gpgsign false`: that config
+  is *shared with the primary checkout*, so for the whole run a human's own commits land silently
+  unsigned, and a killed run never reaches the restore, leaving signing off until somebody notices.
+  Instead: enable `extensions.worktreeConfig` once (a persistent repo-format change — provision it
+  deliberately at worktree-creation time), and set `commit.gpgsign false` **per worktree**
+  (`git -C <path> config --worktree commit.gpgsign false`). For commits the orchestrator itself
+  authors in the primary checkout (merges), pass it per invocation instead:
+  `git -c commit.gpgsign=false merge …`. Land the result on trunk as **one signed commit**
+  (`git merge --squash` + a signed commit) — the single interactive-signing moment, and the reason
+  squash also keeps the unsigned bead commits out of trunk history.
+
+  This is **crash-safe by construction**: the primary checkout's configuration is never mutated, so
+  there is nothing to restore and no window in which a crash can leave signing disabled. What used
+  to be a mandatory restore step becomes a *verification* (assert the primary is still `true`), and
+  a worktree's override disappears with the worktree.
 - **Re-run the gate on the integrated branch — as the *union* of every suite the wave touched, not
   just `gate.*`.** After a wave's merges, run one re-gate on the integration tip. It must be the
   **union of the declared `gate.{compile,test,lint}` and every distinct per-bead gate the beads
