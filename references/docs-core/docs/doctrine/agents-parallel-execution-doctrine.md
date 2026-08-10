@@ -199,6 +199,15 @@ stage changes that seam and nothing else.
   concrete list lives in `substrate.yaml`'s `worktree-seed[]`. Prefer a manual `git worktree add`
   + an explicit seed step over an auto-created worktree precisely so you can inject these before
   the agent starts.
+- **A window's gate runs under a declared resource envelope.** K windows gating in parallel are K
+  copies of a test runner that, by default, sizes its worker pool to the whole machine — so the
+  fleet oversubscribes by K×, and on a developer machine it competes with the dev stack too. The
+  repo declares the knob and the budget (`substrate.yaml`'s `execution.resource-envelope`: the env
+  var to set, a cores budget, and a floor); the orchestrator computes each window's share —
+  `max(floor(cores-budget / K), floor)` — and injects it alongside `toolchain-pin.env`. **A gate
+  that assumes it owns the machine is a defect at K > 1.** Caps must be proven *behaviourally* (an
+  observed process count under a set cap), never by the presence of a config key: runners routinely
+  ignore options they no longer recognise.
 - **Pin the toolchain in the dispatch prompt.** A worktree has no shell-activated version manager
   (mise/asdf/nvm/pyenv/…). Hand subagents the exact gate command with fully-resolved env from
   `substrate.yaml`'s `toolchain-pin.env` + `gate.*`, not a bare command that finds no toolchain.

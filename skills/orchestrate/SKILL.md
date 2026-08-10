@@ -95,8 +95,8 @@ back to one bead per window (the classic per-bead behavior).
 
 ### Step 3. Read `substrate.yaml`
 
-Read `gate.{compile,test,lint}`, optional `gate.out-of-band`, `worktree-seed[]`, and
-`toolchain-pin.{install,env}`. **Abort with an explanation if the `gate` block is missing** — do not
+Read `gate.{compile,test,lint}`, optional `gate.out-of-band`, `worktree-seed[]`,
+`toolchain-pin.{install,env}`, and optional `execution.resource-envelope`. **Abort with an explanation if the `gate` block is missing** — do not
 probe a toolchain (root CLAUDE.md policy; FMEA #2 phantom-gate mitigation depends on these keys).
 
 **Warn on an undeclared seed (no-silent-fallback).** If `worktree-seed` is absent or empty **and**
@@ -107,6 +107,12 @@ and that seeding will then fall to manual per-run copying. Point the user at `su
 `worktree-seed[]`/`toolchain-pin` block (populate it — `/substrate:adopt` can, or edit by hand) and
 **pause for confirm-to-proceed-unseeded**. This is a warning, not an abort: a repo whose gate needs
 no gitignored input is free to run with an empty seed.
+
+**Note the resource envelope.** If `execution.resource-envelope` is present
+(`{env, cores-budget, floor}`), each window's gate runs with `<env>=max(floor(cores-budget / K),
+floor)` for the K windows dispatched in that wave (5c.4). Absent it, the gate runs unbounded — fine
+at K=1, an oversubscription at K>1 (doctrine §Supporting → *A window's gate runs under a declared
+resource envelope*).
 
 **Note the gate-coverage floor.** `gate.{compile,test,lint}` is the *minimum* re-gate, not
 necessarily the *whole* suite the epic exercises. As you read the DAG (Step 2), collect the distinct
@@ -172,7 +178,8 @@ construction* — that's why they share one worktree and run sequentially, not i
 1. `tbd update <id> --status in_progress` for **each bead in the window** (orchestrator-only write), and stamp each bead's run-state `outcome: dispatched` in `.substrate/execution-state.json`.
 2. `git worktree add <path> -b <window-branch> feat/<epic-slug>` — **one worktree per window**, off the **current integration tip**, so it already contains merged blockers. Never branch off stale trunk. Then immediately `git -C <path> config --worktree commit.gpgsign false`, so this window's commits never reach an interactive signer and the primary checkout's config stays untouched.
 3. Copy every `worktree-seed[]` path from the primary checkout into the worktree, then run `toolchain-pin.install` **once for the window** (seeding cost is O(K windows), not O(N beads)). Seed **before** dispatch or the gate fails on a phantom (doctrine §Supporting → *Seed …*; FMEA #2). `toolchain-pin.install` must stay idempotent.
-4. Dispatch **one group-runner** (`bead-implementer`; Agent tool / Task tool / Workflow stage) with, inlined:
+4. Compute this window's resource share from `execution.resource-envelope` — `max(floor(cores-budget / K), floor)` for the K windows in this wave — and inject it as `<env>=<share>` in front of the window's gate commands, alongside `toolchain-pin.env`.
+5. Dispatch **one group-runner** (`bead-implementer`; Agent tool / Task tool / Workflow stage) with, inlined:
    - the window id and its **N sequenced bead tuples** — each `{Goal_i, Files_i, Gate_i, spec-ref_i}`, the gate fully **env-resolved** (`toolchain-pin.env` prefix + `gate.*` literals + any bead override), so it resolves in a worktree with no shell version-manager;
    - the relevant `CLAUDE.md`;
    - the standing rule verbatim — *"no tbd, no git push — implement each bead in sequence, run each bead's gate, report a per-bead pass/fail ledger + a diff summary."*
@@ -265,6 +272,7 @@ on OpenCode. Do not hardwire Workflow as the sole mechanism.
 - MUST initialise the `<epic>` run-state entry before the first dispatch (Step 4.2). A run that appends re-gates into a missing key leaves no ledger at all.
 - MUST honor the **single-writer** invariant: only the orchestrator runs `tbd update`/`close`/`sync` or `git push`. Subagents receive Goal/Files/Gate inlined and return a result.
 - MUST branch each bead worktree off the **current integration tip**, merge-on-green, and **re-gate the integrated tip each wave with the union of `gate.*` and every per-bead gate exercised that wave** — the union re-gate (never `gate.*` alone) is the sole merge-authorizing signal, and each wave's `{wave, commands, result, tip-sha}` MUST be recorded incrementally in `.substrate/execution-state.json`. A wave with no recorded re-gate entry is a protocol violation.
+- MUST inject each window's `execution.resource-envelope` share into its gate when the repo declares one.
 - MUST enforce **file-disjoint** waves (pairwise-Files guard) beyond graph-spec's edges.
 - MUST apply the **two-stage gate non-destructively**: headless-green → merge + unblock dependents + advance run-state `outcome` (`merged` → `verified`); **defer every `tbd close` to the single terminal batch** (Step 6.2) so no bead flips `closed` mid-run; out-of-band proof → `oob-pending`, left open + noted until a human runs it. `verified` (not a mid-run close) is the live done-signal a watcher renders.
 - MUST scope unattended signing to the worktrees (`extensions.worktreeConfig` + per-worktree `commit.gpgsign false`, `-c commit.gpgsign=false` for orchestrator-authored merges) and MUST NOT flip the shared repo-local config. Land trunk as one signed **squash** commit; at close, *verify* the primary is still signing rather than restoring it.
