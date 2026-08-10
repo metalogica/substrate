@@ -28,10 +28,10 @@ must originate here. The executing agent needs `permission.task: allow`.
   `docs/tasks/ongoing/<slug>/<slug>-spec.md` (its epic label is derived from the directory).
 - `--auto` — run all waves unattended (skip the between-wave approval pause). Default: **pause
   between waves**, mirroring `/substrate/execute`'s pause-between-phases ethos.
-- `--pr` — **cloud-output mode.** Push `feat/<epic-slug>` after every green wave re-gate (so an open
+- `--pr` — **review-first landing.** Push `feat/<epic-slug>` after every green wave re-gate (so an open
   PR accumulates the per-bead commits live, wave by wave) and **suppress the Step 6.3 trunk-squash** —
   the PR is the deliverable and GitHub's *Squash and merge* is the single squasher (it re-authors one
-  clean commit, absorbing the unsigned bead commits). For headless runners (`/substrate/dispatch`).
+  clean commit, absorbing the unsigned bead commits). Use it to review the epic before trunk.
   Orthogonal to `--auto`; mutually exclusive with the Step 6.3 trunk landing.
 
 ## When to run

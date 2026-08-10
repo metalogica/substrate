@@ -84,23 +84,6 @@ Ask (end each with `[type 'default' to let me decide sensible defaults]`):
    and propose a `worktree-seed[]` + `toolchain-pin` set, then confirm. This is what
    `/substrate:orchestrate` copies into each worktree before dispatch — declaring it now saves
    hand-seeding on every future fleet run (see `agents-parallel-execution-doctrine.md §Supporting`).
-8. **Cloud dispatch (optional)** — "Do you want `/substrate:dispatch <epic>` to run epics on a
-   GitHub runner (headless `orchestrate --auto --pr` → live PR)? If so, what **services** and
-   **bootstrap** steps does a fresh container need for your gate to pass, and which **secrets**?"
-   Default: **inspect `.github/workflows/*.yml`** — if the repo already runs its gate in CI (a
-   `services:` map + bootstrap steps), lift those into a `ci:` block verbatim and confirm; else ask.
-   Also ask the **agent path** (`ci.agent`, default `claude-action`):
-   - **`claude-action`** (RECOMMENDED, proven — dispatch Phase-1 findings): the official
-     `anthropics/claude-code-action@v1` auto-installs the CLI + substrate plugin and authenticates
-     via subscription OAuth. `secrets-needed` ← **`CLAUDE_CODE_OAUTH_TOKEN`**. Requires the
-     `plugin_marketplaces` **`https://…/substrate.git`** URL + marketplace name (default
-     `https://github.com/metalogica/substrate.git` / `metalogica`).
-   - **`raw-cli`** (framework-agnostic; substrate plugin-install is UNPROVEN headless): a bare
-     `claude -p` or any non-Claude runner via `{{AGENT_COMMAND}}`. `secrets-needed` ←
-     **`ANTHROPIC_API_KEY`** (or the runner's own key name).
-   If the user declines cloud dispatch, leave the commented `ci:` stub in place (dispatch simply
-   refuses until it's filled) — don't fabricate a `ci:` block.
-
 If the user picks `default` on the gate commands, inspect the repo's manifest files, propose
 concrete commands, and **confirm them** before writing — a wrong gate makes `/substrate:execute`
 abort or run the wrong thing.
@@ -139,33 +122,6 @@ The template also ships an uncommented `execution:` block (a sibling of `gate` /
 deviatable prior, documented in `agents-parallel-execution-doctrine.md §Grouping & windows`
 (which also carries the `.substrate/execution-state.json` run-state schema).
 
-If the Step-3 **cloud-dispatch** answer opted in, write a **populated, uncommented** `ci:` block
-into `substrate.yaml` (replace the commented stub) from the detected/asked `services` + `bootstrap` +
-`secrets-needed`, and **token-substitute the copied `.github/workflows/substrate-orchestrate.yml`**:
-- `{{CI_RUNNER}}` → `ci.runner` (default `ubuntu-latest`)
-- `{{CI_SERVICES}}` → the `ci.services` YAML block (or delete the `services:` line if none)
-- `{{CI_ENV}}` → the gate env map (or `{}`)
-- `{{CI_BOOTSTRAP}}` → the `ci.bootstrap` steps joined as shell lines (or `true`)
-- `{{TOOLCHAIN_INSTALL}}` → `substrate.yaml` `toolchain-pin.install` (or `pnpm install --frozen-lockfile`).
-  **Prefix workspace-bin tools with the package manager** (`pnpm turbo`, not bare `turbo`) — the bin
-  isn't on the runner `PATH` (exit-127 Phase-1 finding). Warn if the lifted CI recipe uses a bare bin.
-- `{{AGENT_STEP}}` → the whole agent step(s), composed from the Step-7 `ci.agent` answer:
-  - **`claude-action`**: the `uses: anthropics/claude-code-action@v1` block (Variant A in the
-    template header), substituting `{{PLUGIN_MARKETPLACE_URL}}` (the `https://…/substrate.git` URL)
-    and `{{MARKETPLACE_NAME}}` (e.g. `metalogica`). Keep `id-token: write` in `permissions:`.
-  - **`raw-cli`**: the `npm i -g @anthropic-ai/claude-code` install step + a `run: {{AGENT_COMMAND}}`
-    step (Variant B), where `{{AGENT_COMMAND}}` defaults to
-    `claude -p "/substrate:orchestrate ${{ github.event.inputs.epic }} --auto --pr" --permission-mode bypassPermissions`
-    unless the user named another runner. `id-token: write` is then unused but harmless.
-- The **bead-hydration** step (`npm i -g get-tbd` + `tbd sync --pull`) and `id-token: write` are
-  **static** in the template — no substitution; do not remove them (both agent paths need the
-  hydration; only `claude-action` needs `id-token`).
-
-Because GitHub `services:`/`runs-on:` are static job keys, this substitution happens **now, at adopt
-time** — the workflow is not generic-at-runtime (see the `ci:` NOTE in `substrate.yaml`). If the user
-**declined** cloud dispatch, delete the copied `substrate-orchestrate.yml` (leave no token-valued
-workflow behind) — the repo can re-adopt or run `/substrate:dispatch` later to install it.
-
 Do **not** substitute anything inside `docs/doctrine/` or `docs/protocol/sdd/` — those ship verbatim.
 
 Guard the symlink: if `cp -R` left `CLAUDE.md` as a regular copy (some `cp` variants), fix it:
@@ -188,8 +144,8 @@ git config core.hooksPath .hooks
 
 ### Step 7 — Initialize the beads tracker (tbd) — always
 
-Substrate's execution surface — `/substrate:graph-spec`, `/substrate:orchestrate`,
-`/substrate:dispatch` — is **single-writer over a `tbd` bead tracker**; it is core machinery, not an
+Substrate's execution surface — `/substrate:graph-spec`, `/substrate:orchestrate` — is
+**single-writer over a `tbd` bead tracker**; it is core machinery, not an
 add-on (tbd previously appeared only as an optional handoff note — it is now an install step). adopt
 therefore **always** initializes tbd in the repo.
 
@@ -234,7 +190,6 @@ Installed (stack untouched):
   AGENTS.md (+ CLAUDE.md symlink) · substrate.yaml gate · docs/doctrine/ (manifest + lint +
   agents & parallel-exec doctrines) · docs/protocol/sdd/ · docs/tasks/ongoing/ ·
   .tbd/ (beads tracker, prefix <prefix>) · .hooks/pre-commit · .github/workflows/doctrine-lint.yml
-  [if cloud dispatch opted in] · .github/workflows/substrate-orchestrate.yml · substrate.yaml ci: block
 
 Gate 1 (mechanical): green.
 
@@ -244,13 +199,6 @@ Next:
   3. Write a brief, then:          /substrate:architect-spec docs/tasks/ongoing/<feature>/<feature>-brief.md
      or a quick change:            /substrate:quick-spec "<objective>"
   4. Commit — the pre-commit hook re-runs doctrine-lint.
-
-  [if cloud dispatch opted in]
-  ⚠ Add the repo secret(s) named in substrate.yaml ci.secrets-needed before the first dispatch
-    (adopt never writes secret values):
-       # claude-action path:  gh secret set CLAUDE_CODE_OAUTH_TOKEN   (run `claude setup-token` first)
-       # raw-cli path:        gh secret set ANTHROPIC_API_KEY
-  Then run an epic in the cloud:   /substrate:dispatch <epic>
 
   Beads tracker (tbd) is initialized (prefix <prefix>) — graph a spec into a DAG with
   /substrate:graph-spec, then run it with /substrate:orchestrate.
@@ -268,17 +216,11 @@ Next:
   stub — declare a populated `worktree-seed[]`/`toolchain-pin` block when the repo's gate needs
   gitignored inputs, so `/substrate:orchestrate` auto-seeds instead of the orchestrator hand-seeding.
 - MUST **always** initialize the `tbd` bead tracker (Step 7) — it is core execution machinery for
-  `/substrate:graph-spec` · `/substrate:orchestrate` · `/substrate:dispatch`, not optional.
+  `/substrate:graph-spec` · `/substrate:orchestrate`, not optional.
   Idempotent: first-time `tbd setup --auto --prefix=<prefix>` (prefix from the user, **never** guessed
   silently), else a `tbd setup --auto` refresh when `.tbd/` already exists — never clobber an existing
   tracker. If no `tbd`/`npx` is available, abort with an explanation rather than hand-creating `.tbd/`.
 - MUST leave `doctrine-lint.sh` **green** before printing the handoff. A red adopt is a failed adopt.
-- MUST, for cloud dispatch, either fully token-substitute `substrate-orchestrate.yml` + write a
-  populated `ci:` block, **or** delete the copied workflow — never leave a `{{TOKEN}}`-valued workflow
-  behind (a token-valued `runs-on:`/`services:` is an invalid, silently-failing workflow). `ci:` is
-  optional; a token-valued workflow is not.
-- MUST print `secrets-needed` **by name only** as a manual `gh secret set` instruction — adopt never
-  writes or prompts for secret values.
 - MUST keep `AGENTS.md` canonical with `CLAUDE.md` a symlink to it (macOS/Linux; Windows users work
   under WSL's Linux path).
 - MUST copy the bundle via `cp -R` from `references/docs-core/`, not by promoting from any external

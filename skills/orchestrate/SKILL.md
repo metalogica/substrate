@@ -24,14 +24,14 @@ its rationale here.
   `docs/tasks/ongoing/<slug>/<slug>-spec.md` (its epic label is derived from the directory).
 - `--auto` — run all waves unattended (skip the between-wave approval pause). Default is
   **pause between waves**, mirroring `/substrate:execute`'s pause-between-phases ethos.
-- `--pr` — **cloud-output mode.** Instead of landing one squash commit on trunk (Step 6.3),
+- `--pr` — **review-first landing.** Instead of landing one squash commit on trunk (Step 6.3),
   **push `feat/<epic-slug>` after every wave** (so an open PR accumulates the per-bead commits
   live, wave by wave) and **suppress the trunk-squash entirely** — the PR is the deliverable and
   GitHub's *Squash and merge* becomes the single squasher (it re-authors one clean commit, absorbing
-  the unsigned per-bead commits). Designed for a headless runner (see `/substrate:dispatch`); implies
-  no interactive trunk landing. Composes with `--auto` (the two are orthogonal: `--auto` skips the
-  pause, `--pr` changes the landing). MUST NOT be combined with the Step 6.3 trunk-squash — they are
-  mutually exclusive by construction.
+  the unsigned per-bead commits). Use it when you want the epic reviewed before it reaches trunk
+  rather than after; implies no interactive trunk landing. Composes with `--auto` (the two are
+  orthogonal: `--auto` skips the pause, `--pr` changes the landing). MUST NOT be combined with the
+  Step 6.3 trunk-squash — they are mutually exclusive by construction.
 
 ## When to run
 
@@ -229,7 +229,7 @@ integrated tip is authorized. On the first wave, ensure the PR exists (`gh pr vi
 
 **5g. Pause for approval** with a wave summary (beads merged / left-open / red, re-gate result,
 next wave preview) — **unless `--auto`**. `n`/`pause` stops cleanly so the user can inspect. Under
-`--pr --auto` (the headless-runner combination) there is no pause; the PR is the inspection surface.
+`--pr --auto` (fully unattended) there is no pause; the PR is the inspection surface.
 
 **5h. The terminal doctrine-reconciliation node (final wave).** The epic's last wave is always the
 solo `kind: doctrine-reconciliation` node graph-spec emitted (`blocked-by` every other bead, so it
@@ -253,7 +253,7 @@ runs alone against the fully integrated tip). Dispatch it like any window, with 
 2. **Terminal batch close, then one `tbd sync`** — orchestrator-only, at epic close (or an explicitly agreed checkpoint). Close every `verified` bead in a **single bulk call** (`tbd close <id1> <id2> … --reason "gate green"`, stamping each `outcome: closed`) — this is the *only* `tbd close` in the run — then run the one `tbd sync`. `auto_sync` stays off; never sync mid-flight from a worktree (doctrine §Policy-3 → *Batch sync*). Beads left `oob-pending` stay open and close later, as their out-of-band gates pass.
 3. **Land the epic — two modes:**
    - **Default (local landing):** land `feat/<epic-slug>` on trunk as **one signed commit** (including `.substrate/execution-state.json`): `git switch <trunk>` → `git -c commit.gpgsign=false merge --squash feat/<epic-slug>` → `git commit -S -m "..."`. Squash keeps the unsigned bead commits out of trunk history. This is the run's single interactive-signing moment. Then reap: `git branch -D feat/<epic-slug>` (its content is in the squash; its history is in `execution-state.json`).
-   - **`--pr` mode (cloud landing):** do **NOT** touch trunk. Commit `.substrate/execution-state.json` onto `feat/<epic-slug>`, `git push origin feat/<epic-slug>` a final time, and ensure the PR is open (`gh pr view … || gh pr create -f`). The squash-to-trunk is deferred to GitHub's *Squash and merge* on the PR (the single squasher). The unsigned bead commits are legitimate on the PR branch; GitHub re-authors them into one commit at merge.
+   - **`--pr` mode (PR landing):** do **NOT** touch trunk. Commit `.substrate/execution-state.json` onto `feat/<epic-slug>`, `git push origin feat/<epic-slug>` a final time, and ensure the PR is open (`gh pr view … || gh pr create -f`). The squash-to-trunk is deferred to GitHub's *Squash and merge* on the PR (the single squasher). The unsigned bead commits are legitimate on the PR branch; GitHub re-authors them into one commit at merge.
 4. **Verify signing posture** — `git config --local --get commit.gpgsign` must still be `true`. This is a *check*, not a restore: signing was never disabled repo-wide, only per worktree, and those overrides died with their worktrees. If the check ever fails, something flipped the shared config and that is the bug (doctrine §Supporting → *Unattended signing*; FMEA #1).
 
 ## CC Workflow fast-path (v1, optional at runtime)
