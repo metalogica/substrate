@@ -199,6 +199,13 @@ stage changes that seam and nothing else.
   concrete list lives in `substrate.yaml`'s `worktree-seed[]`. Prefer a manual `git worktree add`
   + an explicit seed step over an auto-created worktree precisely so you can inject these before
   the agent starts.
+
+  **Seed immutable inputs only.** Never seed — or symlink — a handle to *shared mutable state*: a
+  local dev-deployment directory, a running database's state dir, a session/credential cache. Every
+  worktree wired to one is writing branch-side data into state the primary checkout reads, so a
+  fleet quietly corrupts the developer's own environment. Regenerate such inputs offline inside the
+  worktree instead, or route the beads that genuinely need the live backend to the primary
+  checkout.
 - **A window's gate runs under a declared resource envelope.** K windows gating in parallel are K
   copies of a test runner that, by default, sizes its worker pool to the whole machine — so the
   fleet oversubscribes by K×, and on a developer machine it competes with the dev stack too. The
