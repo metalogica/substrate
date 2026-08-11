@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       get-tbd:
-        specifier: ^0.1.26
-        version: 0.1.26
+        specifier: ^0.4.2
+        version: 0.4.2
 
 packages:
 
@@ -109,8 +109,8 @@ packages:
     resolution: {integrity: sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==}
     engines: {node: 6.* || 8.* || >= 10.*}
 
-  get-tbd@0.1.26:
-    resolution: {integrity: sha512-rfZNS245JwXCgIpEwWc1G17U3Fu9O0gRoZeQKo833vuGuLTWaoiSnkk0GaqLGFJfVSDrs3fpSOH7iSJwI+p74g==}
+  get-tbd@0.4.2:
+    resolution: {integrity: sha512-1IAtf/2/BpFjYLWiXtWyFdWw275Hr2XK2Kl2W93JMcdDQWEieMqraQJomc1HLRLmisQPAbwdfBUc8CdBMU/QwA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -357,7 +357,7 @@ snapshots:
 
   get-caller-file@2.0.5: {}
 
-  get-tbd@0.1.26:
+  get-tbd@0.4.2:
     dependencies:
       atomically: 2.1.1
       commander: 14.0.3
