@@ -16,6 +16,11 @@ export const GROOMED_LABEL = "groomed";
 export const NEEDS_SPEC_LABEL = "needs-spec";
 /** Label applied once a PR exists and the bead is awaiting merge (§3.1). */
 export const IN_REVIEW_LABEL = "in-review";
+/**
+ * Prefix marking a bead as belonging to a graphed epic. Epic beads are the
+ * ORCHESTRATOR's single-writer domain — serve never claims one, even groomed.
+ */
+export const EPIC_PREFIX = "epic:";
 /** Assignee the daemon stamps onto beads it claims (§3.1). */
 export const SERVE_ASSIGNEE = "serve";
 
@@ -132,7 +137,19 @@ export class Queue {
 
   /**
    * Discover claimable beads (§4 step 3): open + `groomed`, `needs-spec`
-   * excluded, returned FIFO by ULID (oldest first).
+   * excluded, **unblocked**, **not epic-owned**, returned FIFO by ULID.
+   *
+   * Two queries, intersected by id. `tbd list --label groomed --status open`
+   * stays the primary read because it is the only one that returns the fields
+   * discovery needs — `labels` (groomed / needs-spec / epic:) and `internalId`
+   * (the ULID FIFO key). `tbd ready` supplies the dependency half but emits a
+   * narrower shape (`{description,id,kind,priority,status,title}` — no labels,
+   * no internalId, no assignee), so it is used as a membership SET, never as
+   * the primary listing.
+   *
+   * Epic beads are excluded because a graphed epic belongs to
+   * `/substrate:orchestrate`, which is single-writer over it. Grooming one
+   * while a fleet runs would put two writers on the same bead.
    */
   list(): Bead[] {
     const raw = this.json<unknown[]>([
@@ -142,10 +159,26 @@ export class Queue {
       "--status",
       "open",
     ]);
+    const unblocked = this.readyIds();
     const beads = (Array.isArray(raw) ? raw : []).map(toBead);
     return beads
       .filter((b) => !b.labels.includes(NEEDS_SPEC_LABEL))
+      .filter((b) => !b.labels.some((l) => l.startsWith(EPIC_PREFIX)))
+      .filter((b) => unblocked.has(b.id))
       .sort(byUlid);
+  }
+
+  /**
+   * Ids of every bead tbd considers ready — "open, unblocked, unclaimed".
+   * This is the daemon's only dependency signal: it has no DAG of its own, so
+   * a bead whose blocker is still open must never be dispatched.
+   */
+  private readyIds(): Set<string> {
+    const raw = this.json<unknown[]>(["ready"]);
+    const ids = (Array.isArray(raw) ? raw : []).map((r) =>
+      String((r as Record<string, unknown>)?.id ?? ""),
+    );
+    return new Set(ids.filter((id) => id.length > 0));
   }
 
   /**

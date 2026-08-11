@@ -330,6 +330,22 @@ don't drift apart:
   shell over `tbd … --json`), and that adapter never parses tbd's on-disk store — the CLI is the
   only contract. One writer per board region → no race on the shared tracker, same reason as the
   fleet's single writer.
+- **The board is divided, and the division is enforced in code — not by convention.** Two automata
+  now consume one board, so "one writer per board region" needs the regions to be *decidable*.
+  They are, by two filters in the daemon's discovery (`queue.ts` `list()`):
+  **serve claims only beads that are `groomed` ∧ open ∧ unblocked ∧ not epic-owned.**
+  - *Epic-owned beads belong to the orchestrator.* A bead labelled `epic:<slug>` is inside a graphed
+    DAG the orchestrator is single-writer over; serve skips it even when groomed, so grooming
+    something mid-fleet can never produce two writers on one bead.
+  - *The daemon has no DAG of its own, so it borrows tbd's.* `tbd ready` ("open, unblocked,
+    unclaimed") is intersected by id into discovery. Without it the daemon is dependency-blind and
+    will dispatch a bead whose blocker is still open — into a worktree where the prerequisite does
+    not exist, with no gate to catch it. The intersection is by id because `tbd ready` returns a
+    narrower shape than `tbd list` (no `labels`, no `internalId`), so it can supply membership but
+    never replace the primary listing.
+
+  The resulting split is the standing answer to "which executor runs this bead":
+  **orchestrate owns epics; serve owns singles.**
 - **Sessions are cattle — success is observed, never self-reported.** A headless lane session's own
   output is **never** trusted as the done-signal. `daemon/src/session.ts` returns only the *raw*
   outcome (exit code, usage, log path) and carries no `success` field by design; the caller decides

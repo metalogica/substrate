@@ -170,4 +170,47 @@ describe.skipIf(!HAS_TBD)("queue.ts tbd adapter", () => {
     seed(dir, "unspecified");
     expect(queue.list()[0]!.kind).toBe("task");
   });
+
+  // The daemon has no DAG of its own. `tbd ready` is its only dependency
+  // signal — without it, a bead whose blocker is still open gets dispatched
+  // into a worktree where the prerequisite does not exist.
+  it("list() excludes a blocked bead even when groomed+open", () => {
+    const blocker = seed(dir, "the blocker");
+    const dependent = seed(dir, "the dependent");
+    run("tbd", ["dep", "add", dependent, blocker], dir);
+
+    const ids = queue.list().map((x: Bead) => x.id);
+    expect(ids).toContain(blocker);
+    expect(ids).not.toContain(dependent);
+  });
+
+  it("list() surfaces the dependent once its blocker closes", () => {
+    const blocker = seed(dir, "the blocker");
+    const dependent = seed(dir, "the dependent");
+    run("tbd", ["dep", "add", dependent, blocker], dir);
+    expect(queue.list().map((x: Bead) => x.id)).not.toContain(dependent);
+
+    run("tbd", ["close", blocker, "--reason", "done"], dir);
+
+    expect(queue.list().map((x: Bead) => x.id)).toContain(dependent);
+  });
+
+  // A graphed epic belongs to /substrate:orchestrate, which is single-writer
+  // over it. serve claiming one would put two writers on the same bead.
+  it("list() excludes epic-owned beads even when groomed+open+ready", () => {
+    const single = seed(dir, "a standalone bead");
+    const owned = seed(dir, "an epic child", ["epic:some-feature"]);
+
+    const ids = queue.list().map((x: Bead) => x.id);
+    expect(ids).toContain(single);
+    expect(ids).not.toContain(owned);
+  });
+
+  it("list() keeps FIFO order after the ready/epic filters", () => {
+    const a = seed(dir, "first");
+    seed(dir, "second (epic-owned)", ["epic:x"]);
+    const c = seed(dir, "third");
+
+    expect(queue.list().map((x: Bead) => x.id)).toEqual([a, c]);
+  });
 });
