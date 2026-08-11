@@ -21,13 +21,17 @@ import {
 } from "../src/router.js";
 import type { Bead } from "../src/queue.js";
 
-/** Build a minimal groomed {@link Bead} with the given labels for a route decision. */
-function bead(labels: string[], id = "fx-0000"): Bead {
+/**
+ * Build a minimal groomed {@link Bead} for a route decision. `kind` is tbd's
+ * NATIVE type field — omitted by default so the label-only cases stay explicit.
+ */
+function bead(labels: string[], id = "fx-0000", kind?: string): Bead {
   return {
     id,
     internalId: "is-00000000000000000000000000",
     title: "a bead",
     status: "in_progress",
+    kind,
     labels,
     assignee: "serve",
   };
@@ -91,6 +95,39 @@ describe("router.ts route() — the four §5.1 cases", () => {
       reason: MISSING_KIND_NOTE,
     });
   });
+
+  // The board writes tbd's native `kind` field (its `t` key runs
+  // `tbd update --type`) and never a `kind:` label. Routing on the label alone
+  // made every board-groomed bead bounce forever, so the native field MUST be
+  // sufficient on its own.
+  it("routes on the native kind field alone — no kind: label needed", () => {
+    expect(route(bead(["groomed"], "fx-0001", "bug"))).toEqual({
+      action: "route",
+      lane: "bug",
+    });
+    expect(route(bead(["groomed"], "fx-0002", "task"))).toEqual({
+      action: "route",
+      lane: "quick",
+    });
+    expect(route(bead(["groomed"], "fx-0003", "feature"))).toEqual({
+      action: "route",
+      lane: "quick",
+    });
+  });
+
+  it("an unrecognised native kind still bounces", () => {
+    expect(route(bead(["groomed"], "fx-0004", "chore"))).toEqual({
+      action: "bounce",
+      reason: MISSING_KIND_NOTE,
+    });
+  });
+
+  it("needs-spec still wins over a routable native kind", () => {
+    expect(route(bead([NEEDS_SPEC_LABEL], "fx-0005", "bug"))).toEqual({
+      action: "bounce",
+      reason: NEEDS_SPEC_LABEL,
+    });
+  });
 });
 
 describe("router.ts kindOf()", () => {
@@ -98,8 +135,20 @@ describe("router.ts kindOf()", () => {
     expect(kindOf(bead(["groomed", "kind:bug"]))).toBe("bug");
   });
 
-  it("is undefined when no kind: label is present", () => {
+  it("is undefined when neither a kind: label nor a native kind is present", () => {
     expect(kindOf(bead(["groomed"]))).toBeUndefined();
+  });
+
+  it("falls back to the native kind field when no label is present", () => {
+    expect(kindOf(bead(["groomed"], "fx-0006", "task"))).toBe("task");
+  });
+
+  it("the kind: label overrides the native field", () => {
+    expect(kindOf(bead(["groomed", "kind:bug"], "fx-0007", "task"))).toBe("bug");
+  });
+
+  it("an empty native kind is treated as absent", () => {
+    expect(kindOf(bead(["groomed"], "fx-0008", ""))).toBeUndefined();
   });
 });
 

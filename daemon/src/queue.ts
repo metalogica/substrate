@@ -38,6 +38,13 @@ export interface Bead {
   internalId: string;
   title: string;
   status: string;
+  /**
+   * tbd's NATIVE type field (`task` | `feature` | `bug` | `chore`) — what
+   * `tbd update <id> --type <t>` writes and what the board's `t` key sets.
+   * This is the human's real grooming input; the `kind:` LABEL is only an
+   * optional override on top of it (see `router.kindOf`).
+   */
+  kind?: string;
   labels: string[];
   /** Present once claimed; absent/empty on the board. */
   assignee?: string;
@@ -90,6 +97,7 @@ function toBead(raw: unknown): Bead {
     internalId: String(r.internalId ?? ""),
     title: typeof r.title === "string" ? r.title : "",
     status: typeof r.status === "string" ? r.status : "",
+    kind: typeof r.kind === "string" ? r.kind : undefined,
     labels,
     assignee: typeof r.assignee === "string" ? r.assignee : undefined,
   };

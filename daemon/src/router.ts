@@ -13,7 +13,7 @@ import type { Bead, Route } from "./queue.js";
 
 /** Labels the router keys off (§5.1). */
 export const NEEDS_SPEC_LABEL = "needs-spec";
-/** Prefix of the human's grooming prior — `kind:bug` | `kind:feature` | `kind:task`. */
+/** Prefix of the OPTIONAL routing override — `kind:bug` | `kind:feature` | `kind:task`. */
 export const KIND_PREFIX = "kind:";
 
 /** Note stamped when a bead reaches the board without a routable `kind:` (§3.1). */
@@ -29,10 +29,26 @@ export type RouteDecision =
   | { action: "route"; lane: Route }
   | { action: "bounce"; reason: string };
 
-/** Extract the human's `kind:` prior from a bead's labels, if present (first wins). */
+/**
+ * The human's grooming prior, in precedence order:
+ *
+ *   1. a `kind:<x>` LABEL, if present (first wins) — the explicit override,
+ *      for when routing should differ from the bead's declared type;
+ *   2. else tbd's NATIVE `kind` field — what `tbd update --type` and the
+ *      board's `t` key write, and therefore what nearly every bead carries.
+ *
+ * The field is the fallback rather than the label because the two are the same
+ * datum under two names: tbd emits `kind` on every `--json` payload, while the
+ * `kind:` label is a convention no part of substrate writes automatically.
+ * Reading only the label made every board-groomed bead un-routable — it was
+ * claimed, bounced `missing kind`, released back to `groomed`, and rediscovered
+ * on the next tick forever (a missing-kind bounce leaves only a note, and notes
+ * are not filtered out of discovery the way `needs-spec` is).
+ */
 export function kindOf(bead: Bead): string | undefined {
   const label = bead.labels.find((l) => l.startsWith(KIND_PREFIX));
-  return label ? label.slice(KIND_PREFIX.length) : undefined;
+  if (label) return label.slice(KIND_PREFIX.length);
+  return bead.kind && bead.kind.length > 0 ? bead.kind : undefined;
 }
 
 /**

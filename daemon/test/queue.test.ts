@@ -43,12 +43,22 @@ function show(cwd: string, id: string): Record<string, unknown> {
 }
 
 /** Create a groomed bead in the fixture, returning its public id. */
-function seed(cwd: string, title: string, extraLabels: string[] = []): string {
+function seed(
+  cwd: string,
+  title: string,
+  extraLabels: string[] = [],
+  type?: string,
+): string {
   const labelArgs = [GROOMED_LABEL, ...extraLabels].flatMap((l) => [
     "--label",
     l,
   ]);
-  const out = run("tbd", ["create", title, ...labelArgs, "--json"], cwd);
+  const typeArgs = type ? ["--type", type] : [];
+  const out = run(
+    "tbd",
+    ["create", title, ...labelArgs, ...typeArgs, "--json"],
+    cwd,
+  );
   return String((JSON.parse(out) as { id: string }).id);
 }
 
@@ -143,5 +153,21 @@ describe.skipIf(!HAS_TBD)("queue.ts tbd adapter", () => {
     expect(typeof bead!.id).toBe("string");
     expect(bead!.internalId).toMatch(/^is-/);
     expect(bead!.labels).toContain(GROOMED_LABEL);
+  });
+
+  // tbd emits its native type as `kind` on every --json payload. toBead used to
+  // drop it, which left the router with nothing to route on for any bead groomed
+  // through the board (the board writes --type, never a kind: label).
+  it("list() carries tbd's native kind field through to the Bead", () => {
+    seed(dir, "a defect", [], "bug");
+    const [bead] = queue.list();
+    expect(bead!.kind).toBe("bug");
+    // And the label channel really is absent — the field is doing the work.
+    expect(bead!.labels.some((l) => l.startsWith("kind:"))).toBe(false);
+  });
+
+  it("list() defaults kind to tbd's own default type when none is given", () => {
+    seed(dir, "unspecified");
+    expect(queue.list()[0]!.kind).toBe("task");
   });
 });
