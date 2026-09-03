@@ -26,12 +26,15 @@ import {
   planWorktree,
   createWorktree,
   resolveTrunk,
+  hasOrigin,
   type GitExec,
 } from "./worktree.js";
 import { runSession, type SessionSpec, type SpawnFn } from "./session.js";
+import { observeLocal, type ShellExec } from "./observe.js";
+import { loadGate, type Gate } from "./gate.js";
 import type { Bead, Route } from "./queue.js";
 import type { RouteDecision, BounceAdapter } from "./router.js";
-import type { Config } from "./config.js";
+import type { Config, Mode } from "./config.js";
 
 /**
  * The queue capabilities the triage verb consumes — a structural subset of
@@ -87,20 +90,27 @@ export type Dispatch = (bead: Bead, lane: Route) => Promise<DispatchResult>;
 /**
  * The observed outcome of one dispatch (§5.2 — success is OBSERVED, never
  * self-reported). Exactly one of:
- *   - `pr-open`  → branch pushed ∧ PR open: the caller stamps `in-review` + url.
- *   - `no-pr`    → session exited without an open PR: the caller holds the claim,
- *                  notes `serve: lane failed (log <path>)`, and retries next tick.
+ *   - `landed`     → the work is verifiably there: the caller stamps `in-review`
+ *                    with `ref` as the evidence.
+ *   - `no-landing` → nothing verifiable arrived: the caller holds the claim, notes
+ *                    `serve: lane failed (log <path>)`, and retries next tick.
+ *
+ * The arms are named for the OUTCOME rather than for GitHub because what counts
+ * as evidence is mode-dependent (config `mode`): in `github` mode `ref` is the
+ * PR url (branch pushed ∧ PR open); in `local` mode it is `<worktree>#<branch>`,
+ * backed by "≥1 commit ∧ the repo's own gate green in that worktree". The failure
+ * POLICY does not vary with mode — see `tick.applyDispatchPolicy`.
  */
 export type DispatchResult =
-  | { status: "pr-open"; prUrl: string; branch: string }
-  | { status: "no-pr"; logPath: string; branch: string };
+  | { status: "landed"; ref: string; branch: string; reason?: undefined }
+  | { status: "no-landing"; logPath: string; branch: string; reason?: string };
 
 /** Default dispatch: a no-op STUB for tests that only exercise the claim→route span. */
 export const stubDispatch: Dispatch = async (_bead, lane) => {
-  // no-op stub — returns a benign `pr-open` so the routed path completes; the
+  // no-op stub — returns a benign `landed` so the routed path completes; the
   // real chain is {@link createDispatch}. Tests that assert dispatch wiring
   // inject their own mock instead of relying on this.
-  return { status: "pr-open", prUrl: "", branch: `serve/${lane}` };
+  return { status: "landed", ref: "", branch: `serve/${lane}` };
 };
 
 /**
@@ -110,16 +120,29 @@ export const stubDispatch: Dispatch = async (_bead, lane) => {
 export interface DispatchDeps {
   /** Repo root whose trunk the worktree branch is cut from, and where logs live. */
   repoRoot: string;
-  /** Loaded config — lane skills/models, branchPrefix, worktreeRoot. */
+  /** Loaded config — mode, lane skills/models, branchPrefix, worktreeRoot. */
   config: Config;
   /** git runner (worktree lifecycle). Defaults to {@link realGit}. */
   git?: GitExec;
   /** headless-session spawn seam (§5.2). Mocked in tests; real `claude` in prod. */
   spawn: SpawnFn;
-  /** `gh`/`git` process runner for the idempotent PR loop (§6). */
+  /**
+   * `gh`/`git` process runner for the idempotent PR loop (§6). Only consulted in
+   * `mode: github`; a local-mode daemon never shells out to `gh` at all.
+   */
   gh: (argv: readonly string[]) => Promise<GhResult>;
   /** Resolve the trunk branch; defaults to {@link resolveTrunk}. Overridable in tests. */
   trunk?: (repoRoot: string, git: GitExec) => Promise<string>;
+  /**
+   * The repo's declared gate (`substrate.yaml`) — the `mode: local` done-signal.
+   * Defaults to reading it from `repoRoot` at dispatch time so an edited gate
+   * takes effect without restarting the daemon.
+   */
+  gate?: Gate | null;
+  /** Shell seam for running gate commands in the worktree (`mode: local`). */
+  shell?: ShellExec;
+  /** Whether the repo has an `origin` remote. Defaults to probing {@link hasOrigin}. */
+  remote?: (repoRoot: string, git: GitExec) => Promise<boolean>;
 }
 
 /** One shelled-out `gh`/`git` result for the PR loop (subset of prs.ts ExecResult). */
@@ -139,27 +162,37 @@ export interface TriageDeps {
 
 /**
  * Compose the REAL dispatch chain (§4 step 6, §5.2) from injectable adapters —
- * the single place both `triage.ts` and `tick.ts` wire worktree + session + PR:
+ * the single place both `triage.ts` and `tick.ts` wire worktree + session +
+ * observation:
  *
  *   1. Resolve the trunk + plan the bead's sibling worktree (`worktree.ts`).
- *   2. Create it, branch cut fresh off `origin/<trunk>` (`createWorktree`).
+ *   2. Create it, branch cut off `origin/<trunk>` — or off the LOCAL `<trunk>`
+ *      when the repo has no remote (`createWorktree`), recording the base sha.
  *   3. Spawn the headless lane session in that worktree (`runSession`, §5.2).
- *   4. Verify the PR by OBSERVATION — `gh pr view <branch> || gh pr create`
- *      ({@link ensurePr}); killing/rerunning mid-flow never dups a branch/PR.
- *   5. Return `pr-open` (url) or `no-pr` (log path) — the CALLER decides the
- *      claim's fate (stamp `in-review` vs hold+retry), never this function.
+ *   4. OBSERVE whether it landed — the one step that varies with `config.mode`:
+ *        - `github` → `gh pr view <branch> || gh pr create` ({@link ensurePr});
+ *          killing/rerunning mid-flow never dups a branch/PR.
+ *        - `local`  → ≥1 commit over the base sha ∧ the repo's own `substrate.yaml`
+ *          gate green in the worktree ({@link observeLocal}).
+ *   5. Return `landed` (with the evidence) or `no-landing` (log path + reason) —
+ *      the CALLER decides the claim's fate (stamp `in-review` vs hold+retry),
+ *      never this function.
  *
- * Success is observed, not parsed from the session self-report (§5.2): the
- * session's exit code is recorded for the ledger but the PR presence is what
- * gates `pr-open`.
+ * Success is observed, not parsed from the session self-report (§5.2) — in either
+ * mode. The session's exit code is recorded for the ledger, but it is the
+ * independent observation in step 4 that gates `landed`.
  */
 export function createDispatch(deps: DispatchDeps): Dispatch {
   const git = deps.git ?? realGit;
   const resolveTrunkFn = deps.trunk ?? ((root, g) => resolveTrunk(root, g));
+  const hasRemote = deps.remote ?? ((root, g) => hasOrigin(root, g));
+  const mode: Mode = deps.config.mode;
 
   return async (bead: Bead, lane: Route): Promise<DispatchResult> => {
-    // 1–2. Worktree cut fresh off origin/<trunk> (§3.3).
+    // 1–2. Worktree cut off the trunk (§3.3). In local mode there may be no
+    //      remote at all, so the branch is cut from the local ref and no fetch runs.
     const trunk = await resolveTrunkFn(deps.repoRoot, git);
+    const remote = mode === "github" ? true : await hasRemote(deps.repoRoot, git);
     const plan = planWorktree({
       repoRoot: deps.repoRoot,
       beadId: bead.id,
@@ -167,28 +200,58 @@ export function createDispatch(deps: DispatchDeps): Dispatch {
       branchPrefix: deps.config.branchPrefix,
       worktreeRoot: deps.config.worktreeRoot,
     });
-    await createWorktree({ repoRoot: deps.repoRoot, plan, trunk, git });
+    const { baseSha } = await createWorktree({
+      repoRoot: deps.repoRoot,
+      plan,
+      trunk,
+      git,
+      remote,
+    });
 
     // 3. Headless lane session in the worktree (§5.2). Its outcome is un-judged.
     const laneConfig = deps.config.lanes[lane];
     const spec: SessionSpec = {
       beadId: bead.id,
       ordinal: 1,
-      prompt: lanePrompt(bead, laneConfig.skill),
+      prompt: lanePrompt(bead, laneConfig.skill, mode),
       worktree: plan.path,
       model: laneConfig.model,
       repoRoot: deps.repoRoot,
     };
     const session = await runSession(spec, deps.spawn);
 
-    // 4. PR by OBSERVATION (§5.2, §6): view-or-create is idempotent.
-    const prUrl = await ensurePr(deps.gh, plan.branch, bead, plan.path);
-    if (prUrl !== null) {
-      return { status: "pr-open", prUrl, branch: plan.branch };
+    // 4. OBSERVE (§5.2). Mode decides what counts as evidence; nothing else does.
+    if (mode === "github") {
+      const prUrl = await ensurePr(deps.gh, plan.branch, bead, plan.path);
+      if (prUrl !== null) {
+        return { status: "landed", ref: prUrl, branch: plan.branch };
+      }
+      return { status: "no-landing", logPath: session.logPath, branch: plan.branch };
     }
 
-    // No PR ⇒ the lane did not land (§5.2): report the log for the failure note.
-    return { status: "no-pr", logPath: session.logPath, branch: plan.branch };
+    // Local: read the gate at dispatch time so editing substrate.yaml takes
+    // effect without a daemon restart.
+    const gate = deps.gate !== undefined ? deps.gate : loadGate(deps.repoRoot);
+    const observed = await observeLocal({
+      worktree: plan.path,
+      baseSha,
+      gate,
+      git,
+      shell: deps.shell,
+    });
+    if (observed.landed) {
+      return {
+        status: "landed",
+        ref: `${plan.path}#${plan.branch}`,
+        branch: plan.branch,
+      };
+    }
+    return {
+      status: "no-landing",
+      logPath: session.logPath,
+      branch: plan.branch,
+      reason: observed.reason,
+    };
   };
 }
 
@@ -262,25 +325,39 @@ export async function ensurePr(
 }
 
 /**
- * Compose the headless lane prompt (§5.2): the bead, the standing rules, and the
+ * Compose the headless lane prompt (§5.2): the FACTS about this bead, plus the
  * skill invocation. Kept small + deterministic so the session spec is testable.
+ *
+ * The standing rules deliberately do NOT live here. They used to — this function
+ * hardcoded "push the branch and open a PR with `gh pr create`" — which meant the
+ * lane contract could only change by editing and re-releasing the daemon. They
+ * now live in `skills/serve-bead/SKILL.md`, versioned with the repo. What the
+ * prompt still carries is the state the skill cannot discover for itself: which
+ * bead, its `kind` (the routing prior, passed as a HINT so the skill can adapt
+ * its approach without a second routing decision), and the `mode`, which decides
+ * whether the session pushes its branch or stops at a local commit.
  */
-export function lanePrompt(bead: Bead, skill: string): string {
-  return [
-    `You are a serve-v1 lane worker for bead ${bead.id}: "${bead.title}".`,
-    `Labels: ${bead.labels.join(", ") || "(none)"}.`,
-    `Standing rules: work only in this worktree; commit as you go; push the`,
-    `branch and open a PR with \`gh pr create\` unless one exists; never merge;`,
-    `never run tbd.`,
-    `Run /substrate:${skill} to implement the bead.`,
-  ].join("\n");
+export function lanePrompt(bead: Bead, skill: string, mode: Mode = "local"): string {
+  const lines = [
+    `You are a substrate serve worker for bead ${bead.id}: "${bead.title}".`,
+    `Kind: ${kindOf(bead) ?? "unknown"} · Labels: ${bead.labels.join(", ") || "(none)"}`,
+    `Mode: ${mode}`,
+  ];
+  return [...lines, "", `Run /substrate:${skill} to execute this bead.`].join("\n");
 }
 
 /** How the triage of one named bead ended — surfaced for the print line + tests. */
 export type TriageOutcome =
   | { status: "not-found"; bead: string }
-  | { status: "in-review"; bead: string; lane: Route; priorKind: string | undefined; prUrl: string }
-  | { status: "lane-failed"; bead: string; lane: Route; priorKind: string | undefined; logPath: string }
+  | { status: "in-review"; bead: string; lane: Route; priorKind: string | undefined; ref: string }
+  | {
+      status: "lane-failed";
+      bead: string;
+      lane: Route;
+      priorKind: string | undefined;
+      logPath: string;
+      reason?: string;
+    }
   | { status: "bounced"; bead: string; reason: string };
 
 /**
@@ -346,22 +423,43 @@ export async function triage(id: string, deps: TriageDeps): Promise<TriageOutcom
   // result is OBSERVED, never self-reported (§5.2).
   const result = await dispatch(target, lane);
 
-  if (result.status === "pr-open") {
-    // routed → in-review (§3.1): flip the bead to `in-review` and record the PR
-    // url so the PR loop (§6) can pick it up as an owned PR next tick.
+  if (result.status === "landed") {
+    // routed → in-review (§3.1): flip the bead to `in-review` and record the
+    // evidence — a PR url in github mode, `<worktree>#<branch>` in local mode, so
+    // the board points straight at where the work is.
     deps.queue.stamp(target.id, {
       inReview: true,
-      note: `serve: PR ${result.prUrl}`,
+      note: `serve: landed ${result.ref}`,
     });
-    return { status: "in-review", bead: target.id, lane, priorKind, prUrl: result.prUrl };
+    return { status: "in-review", bead: target.id, lane, priorKind, ref: result.ref };
   }
 
-  // no-pr (§5.2): the lane did not land. HOLD the claim (do not release) and note
-  // the failure with its log; the human re-runs triage (idempotent PR view).
+  // no-landing (§5.2): the lane did not land. HOLD the claim (do not release) and
+  // note the failure with its log AND why, so the board says what went wrong; the
+  // human re-runs triage (idempotent in both modes).
   deps.queue.stamp(target.id, {
-    note: `serve: lane failed (log ${result.logPath})`,
+    note: failureNote(result.logPath, result.reason),
   });
-  return { status: "lane-failed", bead: target.id, lane, priorKind, logPath: result.logPath };
+  return {
+    status: "lane-failed",
+    bead: target.id,
+    lane,
+    priorKind,
+    logPath: result.logPath,
+    reason: result.reason,
+  };
+}
+
+/**
+ * The working note recorded on a failed lane (§5.2). Carries the log path always,
+ * and the observation's reason when there is one — local mode can say *why*
+ * ("session made no commits", "gate failed: …"), which is the difference between
+ * a board that explains itself and one that just says a bead came back.
+ */
+export function failureNote(logPath: string, reason?: string): string {
+  return reason
+    ? `serve: lane failed — ${reason} (log ${logPath})`
+    : `serve: lane failed (log ${logPath})`;
 }
 
 const USAGE = `substrate triage — claim + route ONE bead now (serve-v1)
@@ -421,9 +519,11 @@ export function formatOutcome(outcome: TriageOutcome): string {
     case "not-found":
       return `triage: ${outcome.bead} not on the board (not groomed/open) — nothing to do`;
     case "in-review":
-      return `triage: ${outcome.bead} → route:${outcome.lane} → in-review (PR ${outcome.prUrl})`;
+      return `triage: ${outcome.bead} → route:${outcome.lane} → in-review (${outcome.ref})`;
     case "lane-failed":
-      return `triage: ${outcome.bead} → route:${outcome.lane} — lane failed (log ${outcome.logPath}); claim held, re-run to retry`;
+      return `triage: ${outcome.bead} → route:${outcome.lane} — ${
+        outcome.reason ?? "lane failed"
+      } (log ${outcome.logPath}); claim held, re-run to retry`;
     case "bounced":
       return `triage: ${outcome.bead} bounced — ${outcome.reason}`;
   }

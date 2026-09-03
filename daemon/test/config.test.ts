@@ -23,10 +23,14 @@ describe("loadConfig", () => {
     try {
       const cfg = loadConfig(repo);
       expect(cfg).toEqual(DEFAULT_CONFIG);
+      // local is the DEFAULT mode: nothing leaves the machine unless asked.
+      expect(cfg.mode).toBe("local");
       expect(cfg.pollIntervalSec).toBe(60);
       expect(cfg.concurrency).toBe(1);
-      expect(cfg.lanes.quick).toEqual({ skill: "quick-spec", model: null });
-      expect(cfg.lanes.bug).toEqual({ skill: "diagnose", model: null });
+      // Both lanes run the headless lane skill; the bead's kind reaches it as a
+      // hint in the prompt rather than by selecting a different skill.
+      expect(cfg.lanes.quick).toEqual({ skill: "serve-bead", model: null });
+      expect(cfg.lanes.bug).toEqual({ skill: "serve-bead", model: null });
       expect(cfg.branchPrefix).toBe("serve/");
       expect(cfg.worktreeRoot).toBeNull();
     } finally {
@@ -51,8 +55,31 @@ describe("loadConfig", () => {
       expect(cfg.branchPrefix).toBe("factory/");
       expect(cfg.lanes.bug).toEqual({ skill: "diagnose", model: "opus" });
       // Untouched fields keep their defaults.
-      expect(cfg.lanes.quick).toEqual({ skill: "quick-spec", model: null });
+      expect(cfg.lanes.quick).toEqual({ skill: "serve-bead", model: null });
       expect(cfg.concurrency).toBe(1);
+      expect(cfg.mode).toBe("local");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("honours an explicit mode: github", () => {
+    const repo = tempRepo();
+    try {
+      writeServeYaml(repo, "mode: github");
+      expect(loadConfig(repo).mode).toBe("github");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to local on an unrecognised mode rather than arming gh", () => {
+    // The mode decides which OPTIONAL collaborators are required, so a typo must
+    // degrade to the path that needs FEWER of them — never silently to `github`.
+    const repo = tempRepo();
+    try {
+      writeServeYaml(repo, "mode: githbu");
+      expect(loadConfig(repo).mode).toBe("local");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

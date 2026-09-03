@@ -24,7 +24,6 @@ import {
   lanePrompt,
   type TriageQueue,
   type Dispatch,
-  type DispatchResult,
   type GhResult,
   type DispatchDeps,
 } from "../src/triage.js";
@@ -78,14 +77,14 @@ function fakeQueue(board: Bead[]): TriageQueue & { calls: Call[] } {
   };
 }
 
-/** A dispatch mock that always observes an open PR (branch pushed ∧ PR open, §5.2). */
-function prOpenDispatch(prUrl = "https://gh/pr/1"): Dispatch {
-  return async (_bead, lane) => ({ status: "pr-open", prUrl, branch: `serve/${lane}` });
+/** A dispatch mock that always observes the work landed (§5.2). */
+function prOpenDispatch(ref = "https://gh/pr/1"): Dispatch {
+  return async (_bead, lane) => ({ status: "landed", ref, branch: `serve/${lane}` });
 }
 
-/** A dispatch mock that observes NO PR (session exited without one, §5.2). */
+/** A dispatch mock that observes NOTHING landed (§5.2). */
 function noPrDispatch(logPath = "/logs/x.1.log"): Dispatch {
-  return async (_bead, lane) => ({ status: "no-pr", logPath, branch: `serve/${lane}` });
+  return async (_bead, lane) => ({ status: "no-landing", logPath, branch: `serve/${lane}` });
 }
 
 describe("triage — claim + route + dispatch ONE named bead now (§3.2 + §4.6)", () => {
@@ -101,12 +100,12 @@ describe("triage — claim + route + dispatch ONE named bead now (§3.2 + §4.6)
       route: "quick",
       note: "serve: routed quick (prior kind:feature)",
     });
-    // Then routed → in-review with the observed PR url (§3.1, §5.2).
+    // Then routed → in-review with the observed evidence (§3.1, §5.2).
     expect(q.calls[2]).toEqual({
       op: "stamp",
       id: "fx-a",
       inReview: true,
-      note: "serve: PR https://gh/pr/9",
+      note: "serve: landed https://gh/pr/9",
     });
     expect(q.calls).toHaveLength(3);
 
@@ -115,7 +114,7 @@ describe("triage — claim + route + dispatch ONE named bead now (§3.2 + §4.6)
       bead: "fx-a",
       lane: "quick",
       priorKind: "feature",
-      prUrl: "https://gh/pr/9",
+      ref: "https://gh/pr/9",
     });
   });
 
@@ -209,7 +208,7 @@ describe("triage — claim + route + dispatch ONE named bead now (§3.2 + §4.6)
     const dispatched: Array<{ id: string; lane: Route }> = [];
     const dispatch: Dispatch = async (b, lane) => {
       dispatched.push({ id: b.id, lane });
-      return { status: "pr-open", prUrl: "u", branch: "b" };
+      return { status: "landed", ref: "u", branch: "b" };
     };
 
     await triage("fx-d", { queue: q, dispatch });
@@ -221,15 +220,15 @@ describe("triage — claim + route + dispatch ONE named bead now (§3.2 + §4.6)
     let dispatchCount = 0;
     const dispatch: Dispatch = async () => {
       dispatchCount++;
-      return { status: "pr-open", prUrl: "u", branch: "b" };
+      return { status: "landed", ref: "u", branch: "b" };
     };
     await triage("fx-m", { queue: q, dispatch });
     expect(dispatchCount).toBe(0);
   });
 
-  it("the default dispatch stub returns a benign pr-open (real chain is createDispatch)", async () => {
+  it("the default dispatch stub returns a benign landed (real chain is createDispatch)", async () => {
     const out = await stubDispatch(bead("fx-x", ["kind:feature"]), "quick");
-    expect(out).toMatchObject({ status: "pr-open" });
+    expect(out).toMatchObject({ status: "landed" });
   });
 });
 
@@ -259,8 +258,8 @@ describe("triage — argv shell", () => {
 
   it("formats each outcome as one concise result line", () => {
     expect(
-      formatOutcome({ status: "in-review", bead: "fx-a", lane: "quick", priorKind: "feature", prUrl: "https://gh/pr/9" }),
-    ).toBe("triage: fx-a → route:quick → in-review (PR https://gh/pr/9)");
+      formatOutcome({ status: "in-review", bead: "fx-a", lane: "quick", priorKind: "feature", ref: "https://gh/pr/9" }),
+    ).toBe("triage: fx-a → route:quick → in-review (https://gh/pr/9)");
     expect(
       formatOutcome({ status: "lane-failed", bead: "fx-f", lane: "quick", priorKind: "feature", logPath: "/l.log" }),
     ).toContain("lane failed (log /l.log)");
@@ -334,7 +333,7 @@ describe("ensurePr — idempotent PR by observation (§6, Step 4.3)", () => {
   });
 });
 
-describe("createDispatch — route→worktree→session→PR wiring (mocked, §4.6/§5.2)", () => {
+describe("createDispatch — mode: github, route→worktree→session→PR wiring (mocked, §4.6/§5.2)", () => {
   const b = bead("fx-w", ["kind:feature"]);
 
   // A real temp repoRoot so `runSession`'s log write lands on a writable path —
@@ -347,11 +346,15 @@ describe("createDispatch — route→worktree→session→PR wiring (mocked, §4
     rmSync(repoRoot, { recursive: true, force: true });
   });
 
-  /** Base deps with all external effects mocked — no real git/claude/gh. */
+  /**
+   * Base deps with all external effects mocked — no real git/claude/gh. Pinned to
+   * `mode: github` explicitly: `DEFAULT_CONFIG.mode` is now `local`, so leaving it
+   * implicit here would silently exercise the wrong observation path.
+   */
   function dispatchDeps(over: Partial<DispatchDeps> = {}): DispatchDeps {
     return {
       repoRoot,
-      config: DEFAULT_CONFIG,
+      config: { ...DEFAULT_CONFIG, mode: "github" },
       // Fake git: swallow every worktree command, return empty stdout.
       git: async () => "",
       // Fake trunk resolver — no real origin.
@@ -390,27 +393,135 @@ describe("createDispatch — route→worktree→session→PR wiring (mocked, §4
     expect(spawnCalls).toHaveLength(1);
     expect(spawnCalls[0]!.command).toBe("claude");
     expect(spawnCalls[0]!.cwd).toContain("fx-w");
-    // Observed PR → pr-open with the url.
-    expect(result).toMatchObject({ status: "pr-open", prUrl: "https://gh/pr/w" });
+    // Observed PR → landed with the url as the evidence ref.
+    expect(result).toMatchObject({ status: "landed", ref: "https://gh/pr/w" });
   });
 
-  it("reports no-pr with the session log path when no PR is observed (§5.2)", async () => {
+  it("reports no-landing with the session log path when no PR is observed (§5.2)", async () => {
     const dispatch = createDispatch(
       dispatchDeps({ gh: async () => fail() }), // view fails, create fails (same fake)
     );
     const result = await dispatch(b, "quick");
-    expect(result.status).toBe("no-pr");
-    if (result.status === "no-pr") {
+    expect(result.status).toBe("no-landing");
+    if (result.status === "no-landing") {
       expect(result.logPath).toContain("fx-w.1.log");
     }
   });
 });
 
 describe("lanePrompt — the §5.2 headless prompt", () => {
-  it("inlines the bead, the standing rules, and the skill invocation", () => {
-    const p = lanePrompt(bead("fx-p", ["kind:bug"]), "diagnose");
+  it("inlines the bead, its kind hint, the mode, and the skill invocation", () => {
+    const p = lanePrompt(bead("fx-p", ["kind:bug"]), "serve-bead", "local");
     expect(p).toContain("fx-p");
-    expect(p).toContain("never run tbd");
-    expect(p).toContain("/substrate:diagnose");
+    expect(p).toContain("Kind: bug"); // the routing prior, passed as a HINT
+    expect(p).toContain("Mode: local"); // decides commit-only vs commit-and-push
+    expect(p).toContain("/substrate:serve-bead");
+  });
+
+  it("does NOT carry the standing rules — those live in the skill", () => {
+    // Regression guard: the prompt used to hardcode "push the branch and open a
+    // PR with `gh pr create`" in TypeScript, which made the lane contract
+    // un-editable without a daemon release — and wrong outright in local mode.
+    const p = lanePrompt(bead("fx-p", ["kind:task"]), "serve-bead", "local");
+    expect(p).not.toContain("gh pr create");
+    expect(p).not.toContain("push the");
+  });
+});
+
+describe("createDispatch — mode: local, the gate-green done-signal", () => {
+  const b = bead("fx-l", ["kind:task"]);
+
+  let repoRoot: string;
+  beforeEach(() => {
+    repoRoot = mkdtempSync(join(tmpdir(), "serve-local-"));
+  });
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  /**
+   * Local-mode deps. `git` answers the two reads the local path makes — the base
+   * sha at creation and the commit count afterwards — from `commits`, so a test
+   * can say "the session committed N times" without a real repo.
+   */
+  function localDeps(over: {
+    commits?: number;
+    gateExit?: number;
+    gate?: Partial<DispatchDeps>["gate"];
+  } = {}): DispatchDeps {
+    const commits = over.commits ?? 1;
+    return {
+      repoRoot,
+      config: { ...DEFAULT_CONFIG, mode: "local" },
+      git: async (args) => {
+        if (args[0] === "rev-parse" && args[1] === "HEAD") return "basesha\n";
+        if (args[0] === "rev-list" && args[1] === "--count") return `${commits}\n`;
+        return "";
+      },
+      trunk: async () => "main",
+      remote: async () => false, // a local-only board: no origin at all
+      spawn: async () => ({ exitCode: 0, stdout: '{"total_cost_usd":0}' }),
+      // Any `gh` call here is a bug — local mode must never shell out to it.
+      gh: async () => {
+        throw new Error("gh must not be invoked in mode: local");
+      },
+      gate: over.gate !== undefined ? over.gate : { compile: "true" },
+      shell: async () => ({ code: over.gateExit ?? 0, stdout: "", stderr: "" }),
+    };
+  }
+
+  it("lands on ≥1 commit + a green gate, with the worktree as the evidence ref", async () => {
+    const result = await createDispatch(localDeps({ commits: 1, gateExit: 0 }))(b, "quick");
+    expect(result.status).toBe("landed");
+    if (result.status === "landed") {
+      expect(result.ref).toContain("fx-l");
+      expect(result.ref).toContain("#serve/fx-l");
+    }
+  });
+
+  it("never fetches, and cuts the branch from the LOCAL trunk when there is no origin", async () => {
+    const gitCalls: string[][] = [];
+    const deps = localDeps();
+    const dispatch = createDispatch({
+      ...deps,
+      git: async (args, cwd) => {
+        gitCalls.push([...args]);
+        return deps.git!(args, cwd);
+      },
+    });
+    await dispatch(b, "quick");
+
+    expect(gitCalls.some((c) => c[0] === "fetch")).toBe(false);
+    const add = gitCalls.find((c) => c[0] === "worktree" && c[1] === "add");
+    expect(add?.at(-1)).toBe("main"); // not `origin/main`
+  });
+
+  it("does NOT land when the session made no commits (the refuse-arm)", async () => {
+    // This is the path /substrate:serve-bead takes ON PURPOSE for an
+    // under-specified bead: exit without committing, so the daemon bounces it
+    // back to the board rather than shipping a guess.
+    const result = await createDispatch(localDeps({ commits: 0 }))(b, "quick");
+    expect(result.status).toBe("no-landing");
+    if (result.status === "no-landing") {
+      expect(result.reason).toContain("no commits");
+    }
+  });
+
+  it("does NOT land when the gate is red, even with commits present", async () => {
+    const result = await createDispatch(localDeps({ commits: 3, gateExit: 1 }))(b, "quick");
+    expect(result.status).toBe("no-landing");
+    if (result.status === "no-landing") {
+      expect(result.reason).toContain("gate failed");
+    }
+  });
+
+  it("refuses rather than trusting the session when the repo declares no gate", async () => {
+    // With no gate there is nothing to observe, so accepting the commit would
+    // mean taking the session's word for it — exactly what §5.2 forbids.
+    const result = await createDispatch(localDeps({ commits: 1, gate: null }))(b, "quick");
+    expect(result.status).toBe("no-landing");
+    if (result.status === "no-landing") {
+      expect(result.reason).toContain("no gate");
+    }
   });
 });

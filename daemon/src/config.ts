@@ -14,7 +14,26 @@ export interface Lane {
   model: string | null;
 }
 
+/**
+ * How a dispatched bead's success is OBSERVED, and therefore which collaborators
+ * the daemon needs at all:
+ *
+ * - `local`  — the DEFAULT. Nothing leaves the machine. A bead has landed when
+ *   its worktree carries at least one commit AND the repo's own `substrate.yaml`
+ *   gate is green there. No `gh`, no PR, no remote, no PR-sweep.
+ * - `github` — the original serve-v1 contract (§5.2): landed ⇔ branch pushed ∧ PR
+ *   open, with the §6 PR-sweep driving actualize/merge. Requires an authenticated
+ *   `gh` and an `origin` remote.
+ *
+ * The mode is the single switch every GitHub-coupled path branches on; it never
+ * changes the failure POLICY (retry-once-then-bounce), only what counts as
+ * evidence that the work landed.
+ */
+export type Mode = "local" | "github";
+
 export interface Config {
+  /** How success is observed, and which collaborators are required. */
+  mode: Mode;
   /** Seconds between poll cycles. */
   pollIntervalSec: number;
   /** Max in-flight beads. Hard-capped at 2 in v1. */
@@ -33,13 +52,22 @@ export interface Config {
 /** Hard upper bound on concurrency in v1, regardless of config (§2.3). */
 export const CONCURRENCY_HARD_CAP = 2;
 
-/** The fully-defaulted config used when `.substrate/serve.yaml` is absent (§2.3). */
+/**
+ * The fully-defaulted config used when `.substrate/serve.yaml` is absent (§2.3).
+ *
+ * Both lanes run the same skill: `/substrate:serve-bead` is the headless lane
+ * contract (assess → scope → implement → gate → commit), and the bead's `kind`
+ * reaches it as a HINT in the dispatch prompt rather than by selecting a skill.
+ * The lanes remain distinct because they still carry independent `model` pins —
+ * and because `router.ts`'s kind → lane decision stays a pure, tested function.
+ */
 export const DEFAULT_CONFIG: Config = {
+  mode: "local",
   pollIntervalSec: 60,
   concurrency: 1,
   lanes: {
-    quick: { skill: "quick-spec", model: null },
-    bug: { skill: "diagnose", model: null },
+    quick: { skill: "serve-bead", model: null },
+    bug: { skill: "serve-bead", model: null },
   },
   branchPrefix: "serve/",
   worktreeRoot: null,
@@ -47,6 +75,7 @@ export const DEFAULT_CONFIG: Config = {
 
 /** Shape of the optional user override file — every field partial. */
 interface PartialConfig {
+  mode?: string;
   pollIntervalSec?: number;
   concurrency?: number;
   lanes?: {
@@ -84,6 +113,17 @@ function mergeLane(base: Lane, over: Partial<Lane> | undefined): Lane {
 }
 
 /**
+ * Coerce a user-supplied `mode` to a {@link Mode}. An unrecognised value falls
+ * back to the default rather than throwing: the mode decides which OPTIONAL
+ * collaborators are required, and defaulting to `local` can only ever require
+ * fewer of them. A typo therefore degrades to the safe, offline path instead of
+ * silently arming the `gh` one.
+ */
+function coerceMode(raw: string | undefined): Mode {
+  return raw === "github" || raw === "local" ? raw : DEFAULT_CONFIG.mode;
+}
+
+/**
  * Load config for `repoRoot`, merging an optional `.substrate/serve.yaml` over
  * {@link DEFAULT_CONFIG}. `concurrency` is clamped to {@link CONCURRENCY_HARD_CAP}.
  */
@@ -97,6 +137,7 @@ export function loadConfig(repoRoot: string): Config {
   );
 
   return {
+    mode: coerceMode(over.mode),
     pollIntervalSec: over.pollIntervalSec ?? DEFAULT_CONFIG.pollIntervalSec,
     concurrency,
     lanes: {
