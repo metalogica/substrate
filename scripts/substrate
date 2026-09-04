@@ -40,6 +40,41 @@ case "$sub" in
   triage)
     exec npx -y tsx "$root/daemon/src/triage.ts" --repo "$PWD" "$@"
     ;;
+  --version|-V|version)
+    # Two questions, two lines (kubectl-style client/server split):
+    #   tooling — which substrate clone acts on this repo NOW (the shim's own root);
+    #   kernel  — which substrate last adopted the CURRENT directory (the stamp
+    #             `# substrate-kernel: <version> @ <sha> (<date>)` in ./substrate.yaml,
+    #             written by /substrate:adopt — see bead sub-0uxw).
+    # Informational in every state: probes degrade to partial answers, exit is 0.
+    pv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$root/.claude-plugin/plugin.json" 2>/dev/null | head -1 || true)
+    [ -n "$pv" ] || pv="unknown"
+    tsha="" tbranch="" tdirty=""
+    if git -C "$root" rev-parse --short HEAD >/dev/null 2>&1; then
+      tsha=$(git -C "$root" rev-parse --short HEAD 2>/dev/null)
+      tbranch=$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null)
+      if [ -n "$(git -C "$root" status --porcelain 2>/dev/null)" ]; then tdirty=", dirty"; fi
+    fi
+    if [ -n "$tsha" ]; then
+      printf 'tooling: %s @ %s (%s%s) — %s\n' "$pv" "$tsha" "$tbranch" "$tdirty" "$root"
+    else
+      printf 'tooling: %s — %s (not a git checkout)\n' "$pv" "$root"
+    fi
+    stamp=$(sed -n 's/^# substrate-kernel:[[:space:]]*//p' ./substrate.yaml 2>/dev/null | head -1 || true)
+    if [ -n "$stamp" ]; then
+      printf 'kernel:  %s — from ./substrate.yaml\n' "$stamp"
+      # Grammar `<version> @ <sha> (<date>)` → field 3 is the sha.
+      ksha=$(printf '%s\n' "$stamp" | awk '{print $3}')
+      if [ -n "$ksha" ] && [ -n "$tsha" ] && [ "$ksha" != "$tsha" ]; then
+        printf '⚠ kernel != tooling checkout — consider re-running /substrate:adopt\n'
+      fi
+    elif [ -f ./substrate.yaml ]; then
+      printf 'kernel:  no stamp in ./substrate.yaml (adopted before stamping — see sub-0uxw)\n'
+    else
+      printf 'kernel:  no ./substrate.yaml here (not an adopted/scaffolded project)\n'
+    fi
+    ;;
   ""|-h|--help|help)
     cat <<'EOF'
 substrate — substrate tooling CLI
@@ -56,10 +91,13 @@ usage:
       manual reap: reconcile stale worktrees / claims / merged leftovers
   substrate triage <bead-id>
       claim + route + dispatch ONE bead now, bypassing the poll loop
+  substrate --version
+      tooling (this clone: version @ sha, branch, dirty) vs kernel (the
+      substrate-kernel stamp in ./substrate.yaml), with a drift warning
 EOF
     ;;
   *)
-    echo "substrate: unknown command '$sub' (try: substrate tasks, serve, status, tidy, triage)" >&2
+    echo "substrate: unknown command '$sub' (try: substrate tasks, serve, status, tidy, triage, --version)" >&2
     exit 2
     ;;
 esac

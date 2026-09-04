@@ -53,6 +53,8 @@ Then, from inside any substrate/adopted project:
 ```bash
 substrate tasks                            # live bead TUI; reads tbd from your current dir
 substrate tasks --tbd <epic-slug>          # pin one epic   ·   --once renders once and exits
+substrate --version                        # tooling (this clone) vs kernel (the substrate-kernel
+                                           # stamp in ./substrate.yaml) + a drift warning
 ```
 
 Notes:
