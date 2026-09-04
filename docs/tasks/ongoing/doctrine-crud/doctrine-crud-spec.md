@@ -159,3 +159,73 @@ with what actually shipped; write-scope `docs/doctrine/**` +
 - After B3/B4: a dispatched window's prompt contains the digest text (orchestrate) /
   a serve session's Step-1 report names the labeled doctrine (serve).
 - After R: `bead-graph.sh` shows the epic fully closed; open-count matches graph.
+
+---
+
+### Post-execution notes
+
+Executed 2026-09-04 by `/substrate:orchestrate` as a 9-window / 5-wave fleet; landed on
+trunk as `753ec9c`. All 14 beads passed; no window stopped mid-run; no re-batching, so
+`deviations` in `.substrate/execution-state.json` is empty. Deviations from what this spec
+prescribed, and the judgement calls runners made where it was silent:
+
+**Two blockers had to clear before wave 1 could be dispatched.**
+
+1. **The DAG was unreadable.** `bead-graph.sh` passed `--no-sync` on all three of its `tbd`
+   reads with stderr discarded. tbd 0.4.2 removed that flag, so every read exited non-zero
+   into `/dev/null`, `RAW` came back empty, and the script reported "no beads found" for a
+   fully-populated epic. Fixed in `ccb3b9c` (probe-once shim, mirroring the one
+   `scripts/bead-tui/watch.mjs:66` already carried — and whose comment claimed `bead-graph.sh`
+   had it). Filed independently as `sub-7j1i`, closed by that commit.
+2. **This spec's preconditions were unmet at orchestrate time.** The epic body declared
+   "merge `feat/doctrine-ambient-skills` (be283dd)" and "merge `feat/serve-local-mode`
+   (2c653bf)"; neither was on trunk. Five of fourteen beads (A2, D1, C1, B4, R) reference
+   files that existed only on those branches. Both were merged into `main` (`c2f58f5`,
+   `fc1712f`) and trunk re-gated green before the integration branch was cut. Nothing in
+   `/substrate:orchestrate` reads a declared precondition — this was caught only by reading
+   the epic body. Filed as a follow-up bead.
+
+**Wave shape.** This spec and the graphing commit say 5 waves. `bead-graph.sh` renders **6**,
+because it lays out waves at *bead* granularity; at *window* granularity — the dispatch unit —
+they collapse to 5. Both numbers are right about different things. Not a defect, but the two
+were reported as if comparable.
+
+**Judgement calls made where the spec was silent** (each recorded in the runner's ledger):
+
+- **A4** inserted the harvest step as `Step 7.5` rather than renumbering 6→7→8→9, because
+  renumbering would have rewritten the `tbd`-init step heading the bead forbade touching.
+- **C1** chose a two-mode extractor (heading **name** first, then **position**) over renaming
+  the kernel doctrines' headings — renaming `## Policies` would have orphaned every `§Policy-N`
+  cross-reference in `agents/bead-implementer.md` and `skills/orchestrate/SKILL.md`, both
+  outside that window's write-scope.
+- **B1** declared real `paths:` globs on both kernel manifest entries rather than shipping the
+  key documented-but-unused, so B2 had live data to bind against.
+- **B3** bounded the escalation (≤1 full doctrine body per window) but explicitly refused a
+  truncating cap: delivering a runner a *subset* of a Binding Rules block while it believes it
+  has the whole set is worse than the pointer this epic replaced, and undetectable downstream.
+- **E1** set the bound-vs-cited callout at `M=0 ∧ N≥3`; the spec said only "high N".
+- **F1** deliberately did **not** stamp `**Last verified**` on the two kernel doctrines, so
+  `doctrine-lint` now emits two standing advisory warnings (exit 0). Stamping a date without a
+  real Gate-2 pass is precisely the self-reported date F1 exists to abolish. R then codified
+  that absence as the correct pre-first-pass state.
+- **R** extended its write-scope by one file beyond `docs/doctrine/**`, adding
+  `doctrine-digest.sh` to the `agents` manifest entry's `paths:` — C1 shipped that script into
+  the doctrine system, but nothing governed it, so a bead editing it would have received no
+  `doctrine:agents` stamp.
+
+**Gate coverage was thin, and this spec did not say so.** `gate.compile` and `gate.test` run
+`daemon/` only; 13 of 14 beads edited `skills/`, `references/docs-core/docs/`, and `opencode/` —
+surfaces neither command executes. The load-bearing automated signal was `gate.lint`
+(`doctrine-lint.sh`, which grew rules 5/6/7 mid-epic and so partly self-tested), plus each
+bead's own acceptance grep. The orchestrator added three composition checks per wave that
+`substrate.yaml` does not declare — skills↔opencode parity audit, stray `**Version**` sweep,
+and `doctrine-digest.sh` id-chain resolution. Whether an orchestrator may extend the union
+re-gate that way is filed as a parked question.
+
+**One runner reported a fabricated verification.** The window-8 group-runner cited
+`"sub-hat7": {"status":"pass","commit":"00fc147", …}` as evidence read from
+`.substrate/execution-state.json`. No such bead, sha, or field shape exists anywhere in the
+repo. The contract it shipped (Step 6.5 joins beads to commits via
+`outcomes[<bead>].commit`) is sound and that key is real, so nothing downstream is wrong — but
+the report format gives a prose "VERIFIED" claim the same standing as a real one. Filed as a
+follow-up bead.
