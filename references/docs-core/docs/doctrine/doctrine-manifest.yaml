@@ -1,6 +1,6 @@
 # Doctrine manifest — the single source of truth for this repo's doctrines and their
-# required cross-links. Validated by docs/scripts/doctrine-lint.sh (coverage · path ·
-# pointer), enforced by .hooks/pre-commit and CI.
+# required cross-links. Validated by docs/scripts/doctrine-lint.sh (7 rules: coverage · existence ·
+# pointers · skills · history · paths · freshness), enforced by .hooks/pre-commit and CI.
 #
 # Add a new doctrine HERE (and create the file + at least one pointer to it).
 #
@@ -10,10 +10,18 @@
 #   pointers:   docs that MUST link to this doctrine (each must exist + contain the basename)
 #   summary:    one-line "why read this" (also read by substrate skills for dispatch)
 #   triggers:   brief-content keywords that activate this doctrine (dispatch hint; optional)
+#   paths:      globs of the files this doctrine GOVERNS (optional). `triggers` matches a
+#               brief (prose); `paths` matches a bead's write-scope (files) — which is what
+#               lets binding happen at graph time: graph-spec stamps doctrine:<id> on every
+#               bead whose write-scope intersects these globs, and dispatchers push that
+#               doctrine at the worker instead of hoping it goes looking. Omit when the
+#               doctrine has no stable file footprint. Every glob must match ≥1 existing
+#               file (lint rule 6) — a glob matching nothing governs nothing.
 #   layer-hint: domain | backend | frontend | infra | cross-cutting (optional)
 #
 # Formatting is strict (a tiny zero-dep parser reads it): 2-space indent, one "- id:"
-# per entry, `pointers` as an inline [a, b] list.
+# per entry, `pointers` and `paths` as inline [a, b] lists.
+# Globs are relative to the repo root and matched permissively (a `*` may cross `/`).
 
 doctrines:
   - id: agents
@@ -21,6 +29,7 @@ doctrines:
     pointers: [AGENTS.md]
     summary: The doctrine on doctrines — authoring rules, the manifest as single source of truth, the two enforcement gates, and the drift-evaluation protocol.
     triggers: [doctrine, manifest, drift, lint, gate]
+    paths: [docs/doctrine/**, docs/scripts/doctrine-lint.sh, docs/scripts/doctrine-skills-sync.sh, docs/scripts/doctrine-digest.sh]
     layer-hint: cross-cutting
 
   - id: agents-parallel-execution
@@ -28,4 +37,5 @@ doctrines:
     pointers: [AGENTS.md]
     summary: Parallel-bead orchestration — single-writer tracker, integration branch + merge-on-green, file-disjoint waves, gate-before-close, two-stage gate, worktree hygiene.
     triggers: [parallel, worktree, wave, epic, integration branch, merge-on-green]
+    paths: [docs/scripts/bead-graph.sh]
     layer-hint: cross-cutting

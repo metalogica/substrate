@@ -44,7 +44,12 @@ Read, in this order:
 1. **The bead** — its title, body, and `Kind:` from the dispatch prompt.
 2. **`AGENTS.md` / `CLAUDE.md`** at the repo root, if present.
 3. **`substrate.yaml`** — specifically the `gate:` block. These are the exact commands you must end green on, so read them before you plan, not after.
-4. **`docs/doctrine/`**, if it exists — the 1–3 doctrines whose names or `triggers` match the bead. If a `doctrine-manifest.yaml` is present, use it; else glob `**/*-doctrine.md`.
+4. **`docs/doctrine/`**, if it exists — **by label first, by matching only as a fallback.**
+
+   - **Labelled bead → read exactly the doctrines its labels name.** The dispatch prompt's `Labels:` line carries the bead's `doctrine:<id>` labels. Those were bound at graph time by intersecting the bead's *write-scope* against each manifest entry's `paths:` globs (`/substrate:graph-spec` Step 4.55) — a file-level fact computed once, which beats anything you can infer from the title in a fresh session. Resolve each `<id>` the way `doctrine-digest.sh` does: find the entry with that `id` in `docs/doctrine/doctrine-manifest.yaml` and read its `path:`. `bash docs/scripts/doctrine-digest.sh <id>` prints just that doctrine's Binding Rules — start there, and open the full file only when the bead sits squarely in its domain. With no manifest, fall back to the conventional filename `docs/doctrine/<id>-doctrine.md`.
+   - **Unlabelled bead (`Labels:` shows none, or none of them are `doctrine:`) → match.** Pick the 1–3 doctrines whose names or `triggers` match the bead. If a `doctrine-manifest.yaml` is present, use it; else glob `**/*-doctrine.md`. Beads graphed before Step 4.55 existed, and repos whose manifest declares no `paths:`, will never carry labels — this path is how they still get their doctrine.
+
+   Do not run the matching pass on a bead that *is* labelled: the labels are the binding, and widening past them re-imports the guesswork they replaced. The reverse is not symmetric — no label is not evidence that no doctrine governs the bead, only that none was computed.
 
 Then make one judgement: **is this bead actionable as written?**
 

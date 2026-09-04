@@ -1,5 +1,5 @@
 ---
-description: "Graph the Spec — decompose a written SDD spec into a directed acyclic graph of tbd beads so it can be executed in parallel. Invoke with a spec path (docs/tasks/ongoing/<slug>/<slug>-spec.md), or run with no args to discover the ongoing spec. Parses the spec's Prompt Execution Strategy (phases → steps), turns each unit into a bead, infers blocked-by edges from which files/symbols a step consumes vs. creates (folding behavior-invalidated tests into the changing bead's write-scope), cycle-checks via Kahn, partitions the DAG into context-budget windows by file-adjacency (group:<window-N> labels — the unit the orchestrator dispatches), and persists an epic + child beads under the canonical label epic:<slug>. Prints the wave shape via docs/scripts/bead-graph.sh. Called automatically as architect-spec's final step, or standalone to (re)graph any existing spec. Produces the DAG only — the parallel-execution doctrine's orchestrator consumes it; this command does not execute."
+description: "Graph the Spec — decompose a written SDD spec into a directed acyclic graph of tbd beads so it can be executed in parallel. Invoke with a spec path (docs/tasks/ongoing/<slug>/<slug>-spec.md), or run with no args to discover the ongoing spec. Parses the spec's Prompt Execution Strategy (phases → steps), turns each unit into a bead, infers blocked-by edges from which files/symbols a step consumes vs. creates (folding behavior-invalidated tests into the changing bead's write-scope), cycle-checks via Kahn, partitions the DAG into context-budget windows by file-adjacency (group:<window-N> labels — the unit the orchestrator dispatches), stamps doctrine:<id> labels where a bead's write-scope intersects the doctrine manifest's paths: globs, and persists an epic + child beads under the canonical label epic:<slug>. Prints the wave shape via docs/scripts/bead-graph.sh. Called automatically as architect-spec's final step, or standalone to (re)graph any existing spec. Produces the DAG only — the parallel-execution doctrine's orchestrator consumes it; this command does not execute."
 ---
 
 # /substrate/graph-spec
@@ -99,6 +99,51 @@ deviatable prior, not a hard gate). Then:
 The partition is a **deviatable prior**: the orchestrator MAY re-batch at dispatch time (logging the
 deviation). See `agents-parallel-execution-doctrine.md §Grouping & windows`.
 
+### Step 4.55 — Bind doctrine to write-scope (`doctrine:<id>` labels)
+
+Windows exist and every bead has a write-scope. Bind each bead to the doctrines that **govern the
+files it will edit**, at graph time, so a dispatcher can *push* the right doctrine into the worker's
+prompt instead of hoping the worker goes looking. Only the manifest's `paths` key answers the file
+question — `triggers` matches a *brief* (prose) at spec time, `paths` matches a *write-scope* (files)
+at graph time (`docs/doctrine/agents-doctrine.md` §3.1).
+
+1. **Read the manifest** at `docs/doctrine/doctrine-manifest.yaml`. Take each entry's `id` and its
+   optional `paths:`, parsed in **inline-list form only** — `paths: [docs/doctrine/**, x/y.sh]`, one
+   line — exactly how `doctrine-lint.sh` parses `pointers`. A block sequence (`paths:` then `- a/**`)
+   is not the declared form and the tooling cannot read it: report it as a manifest bug, do not
+   accommodate it.
+2. **Silent no-op when there is nothing to bind.** No manifest, or no entry declares `paths:` → stamp
+   nothing and say nothing. Not a warning, not an abort: substrate must keep graphing specs in repos
+   that never adopted the key, and a warning would fire on every run in every one of them.
+3. **Intersect.** A bead's write-scope is **creates ∪ modifies** — Step 3's `creates` set, which has
+   already absorbed the invalidated-test files. `consumes` is read-only and does **not** bind. A bead
+   is bound to `<id>` iff any path in its write-scope matches any glob in that entry's `paths:`. Match
+   relative to the repo root and **permissively — a `*` may cross `/`** (the same reading
+   `doctrine-lint.sh` uses for its rot guard), so `docs/doctrine/**` matches
+   `docs/doctrine/agents-doctrine.md`, and a bead whose declared scope is itself a directory glob
+   (`convex/**`) matches a doctrine glob rooted there.
+4. **Stamp `doctrine:<id>`** — one label per matching entry; a bead may carry zero, one, or several.
+   `<id>` is the manifest's **`id` field verbatim** (not the filename, not the path). It is the key
+   downstream consumers resolve with `bash docs/scripts/doctrine-digest.sh <id>`; any other spelling
+   breaks that chain silently.
+5. **Exempt the terminal node.** The doctrine-reconciliation bead Step 4.6 shapes (the spec's
+   `Phase N: Doctrine Reconciliation` step, or the node you synthesize when the spec lacks one) gets
+   **no** generic `doctrine:<id>` labels — even though its `docs/doctrine/**` write-scope would match
+   every doctrine that governs doctrine files. Its whole brief *is* reconciliation against the fully
+   integrated epic; stamping it would bind it to a near-arbitrary subset and drown the signal. Step
+   4.6's contract is the only one it carries.
+
+Worked example, against substrate's own manifest (`agents` → `paths: [docs/doctrine/**,
+docs/scripts/doctrine-lint.sh]`; `agents-parallel-execution` → `paths: [docs/scripts/bead-graph.sh]`):
+
+| bead | write-scope | labels stamped |
+|---|---|---|
+| Add rule 6 to the linter | `docs/scripts/doctrine-lint.sh` | `doctrine:agents` |
+| Teach `bead-graph.sh` a flow view | `docs/scripts/bead-graph.sh` | `doctrine:agents-parallel-execution` |
+| Document `paths:` in §3 | `docs/doctrine/agents-doctrine.md`, `docs/doctrine/doctrine-manifest.yaml` | `doctrine:agents` (via `docs/doctrine/**`) |
+| Rename a Convex table | `convex/schema.ts` | *(none — no entry's `paths:` covers it)* |
+| **Terminal** `kind: doctrine-reconciliation` | `docs/doctrine/**` | **none — exempt per (5)**, though the globs would match |
+
 ### Step 4.6 — Force the terminal doctrine-reconciliation node
 
 Every spec ends with `Phase N: Doctrine Reconciliation` (per `spec-template.md`). Its bead is **not** an ordinary node — it is the epic's mandatory **terminal** node that applies the ratify-only doctrine change the feature earned, in-epic. It never queues a `doctrine-amendment` and there is no downstream sink. Shape it explicitly, overriding the generic decomposition:
@@ -120,13 +165,13 @@ Preview the full bead list in DAG order inline, then ask: `Create 1 epic + N bea
 1. **Epic bead:** `tbd create "Epic: <spec title>" --type epic -l "epic:<slug>" --file <spec-ref>` (a tempfile holding the spec path + one-line summary; `mktemp`, unlink after). Capture its id as `<epic-id>`.
 2. **Child beads,** in DAG order so `blocked-by:` resolves to already-assigned ids:
    - render the bead body (acceptance criterion + inlined gate + state-transfer prompt) to a tempfile,
-   - `tbd create "<title>" --type task --parent <epic-id> -l "epic:<slug>" -l "group:<window-N>" --file <tmp>`, where `<window-N>` is the bead's window from Step 4.5 (add `-l "kind:doctrine-reconciliation"` for the terminal node from Step 4.6); capture the id, `unlink` the tempfile (unconditional cleanup, even on failure),
+   - `tbd create "<title>" --type task --parent <epic-id> -l "epic:<slug>" -l "group:<window-N>" [-l "doctrine:<id>" …] --file <tmp>`, where `<window-N>` is the bead's window from Step 4.5 and the zero-or-more `doctrine:<id>` flags are its Step-4.55 bindings, one `-l` each (add `-l "kind:doctrine-reconciliation"` for the terminal node from Step 4.6 — which carries no `doctrine:` labels); capture the id, `unlink` the tempfile (unconditional cleanup, even on failure),
    - stamp the spec back-link: include `spec: <spec-path>#<owning-phase-or-step>` in the bead body (and, when the tracker supports it, `tbd update <bead-id> --spec <spec-path>`),
    - for each blocker: `tbd dep add <bead-id> <blocker-id>`.
-3. `--label epic:<slug>` is the canonical grouping — the label, not the parent link, is the join key `/substrate/synthesize-session` and `bead-graph.sh` rely on. `--parent` is the nicety on top. `group:<window-N>` is the partition membership the orchestrator reads (and MAY re-batch) per `agents-parallel-execution-doctrine.md §Grouping & windows`.
+3. `--label epic:<slug>` is the canonical grouping — the label, not the parent link, is the join key `/substrate/synthesize-session` and `bead-graph.sh` rely on. `--parent` is the nicety on top. `group:<window-N>` is the partition membership the orchestrator reads (and MAY re-batch) per `agents-parallel-execution-doctrine.md §Grouping & windows`. `doctrine:<id>` is the graph-time binding dispatchers push on: the orchestrator inlines the window's digests via `doctrine-digest.sh <id>`, and a daemon lane reads the label-named doctrines first.
 4. Do **not** `tbd sync` here — batch sync stays the orchestrator's call at epic close (parallel-execution doctrine, Policy 3).
 
-**Branch B — `none`:** write each bead to `docs/tasks/ongoing/<slug>/beads/<bead-slug>.md` with `blocked-by:`, `epic: <slug>`, `group: <window-N>` (its Step-4.5 window), and `spec: <spec-path>#<owning-phase-or-step>` in frontmatter. The markdown file is the bead.
+**Branch B — `none`:** write each bead to `docs/tasks/ongoing/<slug>/beads/<bead-slug>.md` with `blocked-by:`, `epic: <slug>`, `group: <window-N>` (its Step-4.5 window), `doctrine: [<id>, …]` (its Step-4.55 bindings — omit the key entirely when there are none), and `spec: <spec-path>#<owning-phase-or-step>` in frontmatter. The markdown file is the bead.
 
 ### Step 6 — Show the shape
 
@@ -173,5 +218,6 @@ Or co-pilot a single window with gate-by-gate pauses (attended mode):
 - MUST NOT double-create: if an epic for `<slug>` already exists, render the existing DAG and offer to add only missing beads.
 - MUST clean up every tempfile it renders (`unlink` even on partial failure).
 - MUST run the **invalidated-tests reverse-scan** for every behavior-changing bead and fold the affected existing test files into that bead's Files/write-scope with a `reconcile:` note — a broken test outside the bead's Files is a guaranteed mid-run stall.
+- MUST stamp `doctrine:<id>` (Step 4.55) on every bead whose write-scope intersects a manifest entry's `paths:` globs, using the manifest's `id` verbatim so `doctrine-digest.sh <id>` resolves it downstream — and MUST leave the terminal `kind: doctrine-reconciliation` node unstamped. When no manifest exists or no entry declares `paths:`, the step is a **silent no-op** — never a warning, never an abort.
 - MUST tag a bead **`gate-scope: partial`** when its inlined gate is a strict subset of `gate.*` (or omits a suite its layer is covered by), so the orchestrator treats the per-bead green as a pre-check and relies on the wave's union re-gate to authorize the merge.
 - SHOULD keep bead granularity at one-step-one-bead unless steps are file-coupled and share a Verify block — over-splitting inflates the DAG, under-splitting kills parallelism.

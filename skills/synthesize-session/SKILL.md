@@ -1,6 +1,6 @@
 ---
 name: synthesize-session
-description: "Terminal phase of the SDD lifecycle — runs once per feature after /substrate:execute archives a spec, before the human moves on. Captures non-obvious session learning that the spec/commit format can't carry, and converts it into atomic doctrine fixes (capped at 5, leverage-ranked), session-filled draft doctrines for architectural axes the session introduced that no existing doctrine governs (coverage-map detection, capped at 3, per-candidate gated, own commit, written via /substrate:add-doctrine's writer), beads with state-transfer prompts so a fresh Claude Code agent can pick the work up cold, and parked open-design-questions filed as beads with `status: parked`. Does NOT queue doctrine amendments — ratify-only doctrine changes are applied in-epic by the executor's terminal Doctrine Reconciliation phase; non-ratify-only doctrine follow-ups land here as ordinary actionable beads, never a passive queue. Idempotency + resumability live in `.substrate/synthesis-state.json`. The §1 session narrative + §7 Pareto cut live in the final synthesis-complete commit body — no per-feature .md report is written. Detects context compaction and warns. Per-feature idempotent. Skipping it is allowed; what gets lost is the ephemeral chat-only learning."
+description: "Terminal phase of the SDD lifecycle — runs once per feature after /substrate:execute archives a spec, before the human moves on. Captures non-obvious session learning that the spec/commit format can't carry, and converts it into atomic doctrine fixes (capped at 5, leverage-ranked), session-filled draft doctrines for architectural axes the session introduced that no existing doctrine governs (coverage-map detection, capped at 3, per-candidate gated, own commit, written via /substrate:add-doctrine's writer), beads with state-transfer prompts so a fresh Claude Code agent can pick the work up cold, and parked open-design-questions filed as beads with `status: parked`. Reports per-epic doctrine bound-vs-cited telemetry (Step 6.5, report-only) off graph-spec's `doctrine:<id>` labels, flagging any doctrine bound to ≥3 beads and cited in none as a `paths:`-or-content audit. Does NOT queue doctrine amendments — ratify-only doctrine changes are applied in-epic by the executor's terminal Doctrine Reconciliation phase; non-ratify-only doctrine follow-ups land here as ordinary actionable beads, never a passive queue. Idempotency + resumability live in `.substrate/synthesis-state.json`. The §1 session narrative + §7 Pareto cut live in the final synthesis-complete commit body — no per-feature .md report is written. Detects context compaction and warns. Per-feature idempotent. Skipping it is allowed; what gets lost is the ephemeral chat-only learning."
 ---
 
 # /substrate:synthesize-session
@@ -77,7 +77,7 @@ Resumability + idempotency live in `.substrate/synthesis-state.json`. Create the
     "status": "in-progress" | "complete",
     "started": "<ISO8601>",
     "completed": "<ISO8601 — only when status: complete>",
-    "completed-steps": [4, "4b", 5, 6, 7, 8, 9],
+    "completed-steps": [4, "4b", 5, 6, "6.5", 7, 8, 9],
     "context": "full" | "compacted",
     "narrative-commit": "<sha — backfilled after final commit>"
   }
@@ -229,7 +229,7 @@ Because a governed area never enters `missing`, this subsumes the already-action
 - `## 3. Recommended Practices (SHOULDs)` — patterns that demonstrably worked.
 - `## 4. Anti-patterns` — anything the session tried and backed out of, or a footgun it hit.
 - `## 5. Examples` — real file shapes / snippets from the shipped code.
-- Header stays `**Status**: Draft`, `**Version**: 0.1.0` — a session-filled starting point, not authority.
+- Header stays `**Status**: Draft`, `**Last verified**: <today YYYY-MM-DD>` — a session-filled starting point, not authority. No `**Version**` and no change log: a living doctrine carries current state only, and git owns its history.
 
 **Cap = 3.** Rank candidates by blast radius (lines + commits touching the area). Top 3 are authored; any surplus **demotes to a `type: feature` bead** (Step 7) titled `Author <id>-doctrine.md for the <area> axis`, carrying the coverage-map evidence in its state-transfer prompt. Never dump >3 half-known doctrines in one run.
 
@@ -253,14 +253,12 @@ After each commit, append `"4b"` to `.substrate/synthesis-state.json[<feature>].
 
 ### Step 5 — Doctrine changes are reconciled in-epic (no amendment queue)
 
-**There is no amendment queue.** This step does not exist as a persistence action any more — it is retained only as a numbered checkpoint so state-file `completed-steps` stays continuous.
-
-Doctrine change is handled at two tiers, neither of which is a passive `type: doctrine-amendment` `status: queued` dead-letter:
+**There is no amendment queue** — no `type: doctrine-amendment` bead, no `status: queued` dead-letter, no file under `docs/tasks/ongoing/doctrine-updates/`. This step performs no persistence; it is retained as a numbered checkpoint so state-file `completed-steps` stays continuous. Doctrine change lands at two tiers, neither of them passive:
 
 1. **Ratify-only changes — already applied.** Any doctrine change the epic *earned* (a pattern the shipped code demonstrates, an outdated rule the code superseded, coverage the code exemplifies) was applied **in-epic** by the executor's terminal **Doctrine Reconciliation** phase (`spec-template.md` §Phase N), inside the same diff as the feature, and re-gated green. Nothing to queue here.
-2. **Non-ratify-only follow-ups — filed as actionable beads, not amendments.** A doctrine change that would require *changing already-shipped code* (a stricter MUST/MUST-NOT the landed code violates) was correctly refused by the ratify-only terminal node. It does **not** become a queued amendment — it becomes an ordinary **actionable `type: task` bead** in Steps 7+9 (the `bead` bucket from Step 3), describing the stricter rule + the code it obliges to change, so a future session can *do* it rather than let it rot in a triage backlog.
+2. **Non-ratify-only follow-ups — actionable beads, not amendments.** A doctrine change that would require *changing already-shipped code* (a stricter MUST/MUST-NOT the landed code violates) was correctly refused by the ratify-only terminal node, and lands instead as the Step-3 `bead` bucket's **actionable `type: task` bead** in Steps 7+9 — describing the stricter rule + the code it obliges to change — so a future session can *do* it rather than let it rot in a triage backlog.
 
-Do **not** create any `type: doctrine-amendment` bead or any file under `docs/tasks/ongoing/doctrine-updates/`. After this step, append `5` to `.substrate/synthesis-state.json[<feature>].completed-steps:`.
+Append `5` to `.substrate/synthesis-state.json[<feature>].completed-steps:`.
 
 ### Step 6 — Annotate the archived spec (mandatory if deviations exist)
 
@@ -271,6 +269,44 @@ For any deviation between what the spec prescribed and what shipped, write a `##
 Commit as its own atomic commit: `docs(<feature>): annotate post-execution deviations`. After commit, append `6` to `completed-steps`.
 
 Per SDD doctrine — see `docs/protocol/sdd/_SPEC-STANDARD.md` §11 Archive Protocol — this is the only sanctioned write to an archived spec. Step 6 is the canonical writer.
+
+### Step 6.5 — Doctrine usage report: bound vs cited (report-only)
+
+`/substrate:graph-spec` Step 4.55 stamped `doctrine:<id>` on every bead whose write-scope intersected that doctrine's manifest `paths:`. Bindings are therefore labels rather than vibes, which makes doctrine EV **measurable per epic**: how many beads a doctrine was *bound* to, versus how many it was actually *cited* in when the work deviated or explained itself. A doctrine bound to many beads and cited in none is either mis-scoped (`paths:` too broad) or not saying anything the work needed — and nothing else in the lifecycle surfaces that asymmetry.
+
+**Report-only.** Creates no beads, edits no doctrine, touches no manifest. Its entire output is the report, which lands in the Step-10 synthesis-complete commit body (no `.md` file — same convention as §1 and §7).
+
+**Bound (N).** Enumerate the epic's beads (`tbd list --label epic:<feature>`), then read each one's labels with `tbd show <id> | grep -oE 'doctrine:[[:alnum:]_-]+'` — the same label read `bead-graph.sh` uses for `group:`. Tally beads per `<id>`. Under tracker `none`, read the `doctrine:` frontmatter key instead. If no bead carries a `doctrine:` label, the epic predates Step 4.55: say so in one line and skip the rest of the step (not a warning, not an abort).
+
+**Cited (M).** A doctrine is **cited** by a bead when its manifest `id`, its filename (`<id>-doctrine.md`), or a `doctrine-digest.sh <id>` invocation appears in evidence attributable to that bead. The evidence this repo actually persists, and nothing else:
+
+| Source | How to read it | Attribution |
+|---|---|---|
+| Merged commit bodies | `.substrate/execution-state.json[<feature>].outcomes[<bead>].commit` → `git show -s --format=%B <sha>` | that bead |
+| `### Post-execution notes` | the archived spec Step 6 just wrote — the deviation record | the beads it names; else epic-level |
+| Reconciliation edits | `git log --name-only --format= <base>..HEAD -- docs/doctrine/` — reuse Step 2's already-actioned set | epic-level: an edit to `<id>-doctrine.md` cites `<id>` |
+| `.substrate/runs/<feature>/<run-id>/` | group-runner traces + deviation log, if still on disk | best-effort only — gitignored and TTL-swept, so **absence is normal and never evidence of M=0** |
+
+`M` = how many of that doctrine's `N` bound beads carry ≥1 attributable citation. Epic-level citations do not raise `M` — report them in their own column so a doctrine that *was* reconciled isn't misread as inert.
+
+**Emit the asymmetry first**, above the table, one line per offender — this is the point of the metric, not a footnote in a table:
+
+```
+⚠ doctrine:agents-parallel-execution — bound to 7 beads, cited in 0.
+  Audit docs/doctrine/agents-parallel-execution-doctrine.md: is `paths:` too broad
+  (7 beads' write-scopes matched globs the doctrine has nothing to say about), or is
+  its §2 Binding Rules not carrying rules the work needed?
+
+| doctrine | bound (N) | cited (M) | epic-level | read as |
+|---|---|---|---|---|
+| agents-parallel-execution | 7 | 0 | — | ⚠ audit `paths:` or content |
+| agents | 3 | 3 | reconciled | earning its binding |
+| backend | 2 | 1 | — | partial |
+```
+
+Fire the callout when **M = 0 and N ≥ 3** — below 3 the sample is too thin to accuse a doctrine, and the noise would train the reader to skip the line. Flag the inverse in one line where it occurs: a doctrine cited by a bead it was **not** bound to means its `paths:` is too narrow (or absent).
+
+Append `"6.5"` to `completed-steps`, and carry the callouts + table into Step 10's commit body.
 
 ### Step 7 — Draft beads (includes deferred-fixes AND parked-questions)
 
@@ -461,6 +497,7 @@ Print this summary to the user:
   Doctrine reconciled:    in-epic by the executor's Doctrine Reconciliation phase (ratify-only) — not queued here
   Beads drafted:          <N> {in tbd | as files at docs/tasks/ongoing/<bead-slug>/bead.md}  (tracker-dependent; incl. any non-ratify-only doctrine follow-ups as type=task)
   Parked questions:       <N> {in tbd as type=open-question status=parked | as files at docs/tasks/ongoing/<slug>/bead.md status=parked}
+  Doctrine bound vs cited: <N> bound doctrines · <K> flagged bound-but-never-cited (report-only — see commit body)
   Pareto cut (top by leverage):
     - <bead-id-or-title>
     - <bead-id-or-title>
@@ -495,6 +532,9 @@ git commit -m "chore(<feature>): synthesis complete <YYYY-MM-DD>
 - <bead-id-or-title> — <why high-leverage>
 - <bead-id-or-title> — <why high-leverage>
 
+§6.5 Doctrine usage — bound vs cited
+<any ⚠ bound-but-never-cited audit lines first, then the bound/cited/epic-level table>
+
 Doctrine fixes this session: <SHA-list>
 Doctrines authored this session: <id + path + SHA, one per line>
 Beads created: <tbd-id-list or markdown-path-list>
@@ -518,8 +558,9 @@ Set `.substrate/synthesis-state.json[<feature>].status` to `complete` and `.subs
 - **MUST** carry the §1 narrative + §7 Pareto cut in the final synthesis-complete commit body — git is the audit log. Backfill `.substrate/synthesis-state.json[<feature>].narrative-commit` with that commit's SHA after it lands.
 - **MUST** unlink tempfiles after each successful `tbd create` / `tbd update` (use `trap` or equivalent). Leaving stray markdown bodies in `/tmp` is fine; leaving them in the working tree is the bug this design exists to prevent. On tracker-invocation failure, leave the tempfile in place and print its path so the user can recover.
 - **MUST** cap immediate fixes at 5, ranked by `miscoaching_cost × inverse_revert_cost`. Demoted candidates become `type: drift` beads, not amendments.
-- **MUST** author a session-filled draft doctrine (Step 4b) for any architectural axis the session *introduced* that no existing doctrine governs, detected via the coverage map (touched areas ∖ governed areas), not via drift. Cap at 3 per run, ranked by blast radius; surplus demotes to a `type: feature` bead recommending the axis. Each authored doctrine is `Status: Draft`, gated per-candidate (`y / modify / defer`, **not** default-`Y`), written via `/substrate:add-doctrine`'s writer (its Step 3 + Step 4) with filled sections in place of the placeholder stub, and lands as its own `doctrine(<id>): initial draft from <feature> session` commit. Never emit a bare placeholder stub from this step — the session context is the point.
+- **MUST** author a session-filled draft doctrine (Step 4b) for any architectural axis the session *introduced* that no existing doctrine governs, detected via the coverage map (touched areas ∖ governed areas), not via drift. Cap at 3 per run, ranked by blast radius; surplus demotes to a `type: feature` bead recommending the axis. Each authored doctrine is `Status: Draft` with a `Last verified` date and no `Version`/change-log header, gated per-candidate (`y / modify / defer`, **not** default-`Y`), written via `/substrate:add-doctrine`'s writer (its Step 3 + Step 4) with filled sections in place of the placeholder stub, and lands as its own `doctrine(<id>): initial draft from <feature> session` commit. Never emit a bare placeholder stub from this step — the session context is the point.
 - **MUST** produce a top-3-to-5 Pareto cut. It lives in the synthesis-complete commit body and the Step 10 handoff print — not in any standalone file.
+- **MUST** report per-epic doctrine bound-vs-cited telemetry (Step 6.5) whenever the epic's beads carry `doctrine:<id>` labels, and **MUST NOT** act on it — that step creates no bead and edits no doctrine or manifest. Count citations only from the durable artefacts Step 6.5 names; `.substrate/runs/` is gitignored and TTL-swept, so its absence is never evidence of `M = 0`. Emit the `M = 0, N ≥ 3` audit line *above* the table, and carry both into the synthesis-complete commit body — never a standalone file.
 - **MUST** annotate the archived spec with a `### Post-execution notes` block whenever deviations occurred. Replace, don't append.
 - **MUST** tag every bead and parked-question with `originating-spec` + `originating-session` for provenance.
 - **MUST** record `context: compacted` in `.substrate/synthesis-state.json[<feature>]` if Step 0 detected compaction and the user proceeded anyway.

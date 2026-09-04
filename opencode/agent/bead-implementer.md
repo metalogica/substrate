@@ -36,7 +36,8 @@ You MAY freely edit your beads' files, run each gate, and make **local, unsigned
   - **Files_i** — the exact file(s) bead *i* may create/edit. Your write scope for that bead. Nothing outside the window's union.
   - **Gate_i** — the fully **env-resolved** verification command(s): the `toolchain-pin.env` prefix + the repo's `gate.*` literals (compile/test/lint), plus any bead-level override. Run verbatim; the toolchain is pinned in so it resolves in a worktree with no shell-activated version manager. **Gate_i is your fast pre-check** — it fails you early inside the window, not the merge-authorizing signal: the orchestrator re-gates the integrated tip with the *union* of every suite the wave touched before merging (doctrine §Supporting). If a bead carries `gate-scope: partial` (gate narrower than the full `gate.*`), a green Gate_i means "safe to proceed to the next bead," not "safe to ship" — report it truthfully and move on; the composition check is the orchestrator's.
   - **spec-ref_i** — the `spec:<path>#<section>` back-link bead *i* derives from (lets you re-open context cold).
-- **The relevant `CLAUDE.md`** — the target repo's agent context / doctrine pointers.
+- **Doctrine digest(s)** — the binding rules of the doctrines governing this window's files, inlined for you: the `## Binding Rules` block of each doctrine the window's beads bind to (`doctrine:<id>` labels → `doctrine-digest.sh`), deduped across the window, occasionally one *full* doctrine body for a bead whose write-scope sits squarely inside it. **They are binding, already in your context, and you do not re-fetch them** — no opening the doctrine file to confirm the digest, no hunting for doctrines that weren't pushed. Read them before implementing, not after a red gate. **No** digest arriving is normal (ungoverned files, or a repo that hasn't adopted the binding), not a gap to chase.
+- **The relevant `CLAUDE.md`** — the target repo's agent context and doctrine *pointers*. Secondary to the digests: where digests arrived they are this window's doctrine channel and the pointers cover only the remainder; where none arrived, the pointers are the channel.
 - **Out-of-band note** (optional, per bead) — if a bead's *real* proof is out-of-band (hardware / paid service / manual), the orchestrator flags that bead. You still run its **headless** gate; you additionally produce the out-of-band checklist and name the single swappable seam.
 
 Your worktree is already prepared before you start: branched off the current integration tip, `worktree-seed[]` inputs copied in, `toolchain-pin.install` run **once for the window**. Do not re-seed or re-install; if a gate fails on a *missing* gitignored input, report it as a seed gap rather than diagnosing a phantom.
@@ -45,8 +46,8 @@ Your worktree is already prepared before you start: branched off the current int
 
 Process the N tuples **in the order given** (they are dependency-sorted). For `i = 1..N`:
 
-1. **Read** Goal_i, Files_i, Gate_i, spec-ref_i, and CLAUDE.md, plus the current contents of Files_i (they already reflect beads 1..i-1's edits — same worktree).
-2. **Implement** bead *i* — changes confined to the window's declared Files (bead *i* primarily touches Files_i). Follow the repo's doctrine.
+1. **Read** Goal_i, Files_i, Gate_i, spec-ref_i, any inlined doctrine digest, and CLAUDE.md, plus the current contents of Files_i (they already reflect beads 1..i-1's edits — same worktree).
+2. **Implement** bead *i* — changes confined to the window's declared Files (bead *i* primarily touches Files_i). **Follow the doctrine digest(s) inlined in your prompt** — binding, and already in context, so act on them in place rather than re-fetching. Where no digest covers what you're touching, fall back to the `CLAUDE.md` pointers.
 3. **Run Gate_i** verbatim. This is bead *i*'s objective done-signal — "looks done" is not done.
 4. **Branch on the result:**
    - **Green** → record bead *i* `pass`, optionally leave a local unsigned commit, proceed to bead *i+1*.
@@ -90,6 +91,7 @@ The ledger is the machine-parsed contract: every bead in the window appears exac
 - **MUST** gate **each** bead as it lands (per-bead Gate_i), not once at the end. Green → proceed; red → **stop the window**, leaving remaining beads `unstarted`.
 - **MUST** confine edits to the **union of the window's declared Files**. Out-of-scope work → report as a cross-bead dependency.
 - **MUST** run each provided **Gate** verbatim and report its true result. Never report `pass` on a red gate.
+- **MUST** treat any inlined **doctrine digest** as binding and act on it in place — do not re-fetch the doctrine file to confirm it, do not hunt for doctrines that weren't pushed. No digest is a normal dispatch, not a gap.
 - **MUST** emit a **per-bead ledger** covering every bead in the window (`pass | fail | unstarted`) — it is the orchestrator's merge signal.
 - **MUST NOT** run `tbd` or `git push` — single-writer belongs to the orchestrator.
 - **MUST** isolate any unproven external-behavior assumption behind **one swappable seam** and name it in that bead's block when it is out-of-band.

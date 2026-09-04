@@ -1,6 +1,5 @@
 # Substrate Domain Doctrine
 
-**Version**: 1.0.0
 **Status**: Binding
 **Date**: 2026-04-20
 

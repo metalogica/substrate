@@ -169,6 +169,80 @@ a `.tbd/` — tbd owns its store format (fail-fast; don't fabricate the tracker)
 tbd manages its own `.tbd/.gitignore` and its `tbd-sync` data branch — do not edit `.tbd/**` by
 hand. Confirm `.tbd/config.yml` exists (and, first-time, carries `id_prefix: <prefix>`) before continuing.
 
+### Step 7.5 — Harvest, then delete, any pre-existing doctrine changelogs
+
+Numbered 7.5 so Steps 6–9 keep their numbers. It runs after the bundle is in (so `docs/doctrine/`
+and the lint script exist) and **before** the Step-8 green gate.
+
+**Why this step exists.** `doctrine-lint` fails any registered doctrine that carries a
+`## Change Log` table or a `**Version**` header — history belongs in git, not in a living document.
+A repo whose own doctrines carry them would therefore be adopted straight into a **red** gate,
+breaking adopt's "leaves doctrine-lint green" promise. But a bare delete would lose real content:
+git keeps the *diff*, and nobody greps a diff for a rule's rationale. **Harvest is re-indexing, not
+deletion** — the rationale moves to where an agent actually looks for it, next to the rule it explains.
+
+**Detect.** Scan the target's own doctrines, excluding the two meta-doctrines just copied in (they
+ship clean):
+
+```bash
+grep -rlE '^\*\*Version\*\*|^#{1,3} .*Change Log' docs/doctrine --include='*.md' \
+  | grep -v -e 'agents-doctrine\.md' -e 'agents-parallel-execution-doctrine\.md' || true
+```
+
+No hits → report "no pre-existing doctrine history to harvest" and go straight to Step 8. Skip the
+rest of this step entirely; it is a no-op on a repo with no prior doctrines.
+
+**Triage each row** of each detected Change Log table. Read the table in full first, then classify
+every row against the section it cites:
+
+- **(a) Carries rationale, and that why-narrative is absent at the section it cites → fold it
+  inline.** Write it at that section as a short why-note in the doctrine's own voice and present
+  tense — the standing reason the rule is what it is, *not* a dated event. "Stale writes return 409;
+  a missing prerequisite returns 422 — the caller retries the first and fixes the second," never
+  "1.4.0 changed the error code." The archetype is clawcraft's `treasury-doctrine` §9 row `1.4.0`,
+  whose stale-vs-gap 409/422 distinction appears nowhere in the rule text: a bare delete erases the
+  only copy. Rows like that get **folded, not dropped**.
+- **(b) Carries rationale the cited section already states → drop the row.** One fact, one home;
+  duplication IS drift (`agents-doctrine.md` §2). Do not fold a second copy of something the
+  doctrine already says.
+- **(c) Carries no rationale worth keeping → drop the row.** Version bumps, typo and formatting
+  fixes, "clarified wording", and rows whose entire content is rule text already present in the doc.
+  These are exactly the dead apparatus this step exists to shed.
+- **Cites no section, or cites one that no longer exists** → treat as (a) but **ask the user where it
+  belongs**. Never guess a home for a rule's rationale.
+
+**Delete the apparatus.** Once every row is dispositioned: remove the `## Change Log` heading and its
+table, and the `**Version**` / `**Date**` header lines. Keep `**Status**`; add
+`**Last verified**: <today YYYY-MM-DD>` if the file has none, so the doctrine still attests freshness
+without carrying history.
+
+**Confirm before deleting — required.** Present, per file: which rows fold and *where* they land,
+which rows drop and *why*, the resulting header block, and the note that the full table is preserved
+verbatim in the removal commit body. Then ask explicitly to proceed.
+
+**On decline, abort with an explanation.** Revert the in-progress edits, leave the doctrines
+byte-identical to how they were found, and tell the user that adopt stopped **before** Step 8 and
+that the repo will fail doctrine-lint's changelog rule until its doctrine history is harvested (by
+hand, or by re-running adopt). Do **not** fall back to a partial harvest, do **not** skip the file and
+continue to Step 8, and do **not** retry with a different plan — a declined delete is a stop, not a
+negotiation.
+
+**Commit the removal with the table in its body** — this is where the deleted history survives:
+
+```bash
+git add <only the doctrine files this step rewrote>
+git commit -F - <<'EOF'
+docs(doctrine): harvest changelogs into the doctrines; git keeps the history
+
+<each harvested table, verbatim, one block per file, under a `--- <path> ---` line>
+EOF
+```
+
+This is the one place adopt commits on its own initiative (the Constraints' *SHOULD NOT commit*
+yields here): the commit body **is** the archive, so deleting without it would be an unrecoverable
+loss. Scope the commit to the doctrine files only — the rest of the kernel stays uncommitted for the
+user's review.
+
 ### Step 8 — Verify green (the gate for this command)
 
 ```bash
@@ -221,6 +295,12 @@ Next:
   Idempotent: first-time `tbd setup --auto --prefix=<prefix>` (prefix from the user, **never** guessed
   silently), else a `tbd setup --auto` refresh when `.tbd/` already exists — never clobber an existing
   tracker. If no `tbd`/`npx` is available, abort with an explanation rather than hand-creating `.tbd/`.
+- MUST **harvest before deleting** any pre-existing doctrine changelog (Step 7.5): rationale-bearing
+  rows fold inline as why-notes at the section they cite, and the full table goes verbatim into the
+  removal commit body. Never delete a `## Change Log` with a bare `sed`/rewrite — that drops
+  rationale git can no longer surface by topic.
+- MUST get explicit user confirmation before that deletion, and **abort with an explanation** on
+  decline (leaving the doctrines byte-identical) — never a partial harvest, silent skip, or retry.
 - MUST leave `doctrine-lint.sh` **green** before printing the handoff. A red adopt is a failed adopt.
 - MUST keep `AGENTS.md` canonical with `CLAUDE.md` a symlink to it (macOS/Linux; Windows users work
   under WSL's Linux path).
@@ -229,3 +309,5 @@ Next:
 - SHOULD inspect the repo's manifest files (package.json / Cargo.toml / pyproject.toml / go.mod /
   Makefile) to propose sensible gate defaults when the user picks `default`.
 - SHOULD NOT commit — leave the staged kernel for the user to review, unless they ask you to commit.
+  The single exception is Step 7.5's changelog-removal commit, whose body carries the harvested
+  table; scope it to the rewritten doctrine files only.

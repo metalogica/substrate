@@ -99,6 +99,49 @@ them as its rubric.
 7. **Verify before you trust (and before you recommend).** A doctrine reflects what was true when
    written. If it names a file, symbol, flag, or command, confirm it still exists before acting
    on or repeating it. Stale doctrine is worse than no doctrine — it misleads with authority.
+8. **History belongs on immutable artifacts; living docs carry current state only.** Append-only
+   history — a `Change Log` table, `**Version**`/`**Date**` headers — is right for an artifact
+   that is *frozen once ratified*: a spec (see `_SPEC-STANDARD.md` §11). A doctrine is the
+   opposite: it is edited continuously, so a hand-kept log is indexed by *date* while every agent
+   queries it by *topic*, and it drifts from the file it claims to describe. Therefore:
+   **git owns the history** (`git log -p docs/doctrine/<id>-doctrine.md` answers "what changed
+   when", for free and without lying); the doctrine carries **current state only**; and freshness
+   is attested by a single `**Last verified**: YYYY-MM-DD` header that a machine maintains
+   (`/substrate:add-doctrine` writes it into the stub at authoring; a green Gate-2 pass bumps it,
+   §6) rather than a version number nobody increments.
+   Pre-existing history metadata is **harvested, not just deleted**: rationale-bearing rows carry
+   real earned knowledge in the wrong index, so fold each row's still-true *why* inline at the
+   section it cites, then remove the table/header and paste it verbatim into the removal commit
+   body. Mechanically enforced — Gate 1 rule 5 (§5) fails a registered doctrine that carries
+   either marker.
+
+### 2.1 The Binding Rules section is the doctrine's digest
+
+A skill is affordable because it is split in two: a one-line `description` that is *always* in
+context, and a body that loads only when it's actually needed. **Doctrine gets the same split, and
+`## 2. Binding Rules` is the description tier.** Inlining a 2,000-line doctrine into every
+dispatch prompt is the changelog problem inverted — paying full price for context nobody reads;
+telling a worker "go read the doctrine" costs nothing and *verifies* nothing. The digest is the
+middle tier: **push** the Binding Rules at dispatch (cheap, and it provably arrived), **pull** the
+full body only when a bead sits squarely inside the doctrine's `paths` (§3.1).
+
+The extractor is `docs/scripts/doctrine-digest.sh <id>`: it resolves the id through the manifest
+and prints that doctrine's binding-rules block, from its heading to the next `## `. It finds the
+section by **name first, position second** —
+
+1. a heading naming the binding tier (`## … Binding Rules …`, `## … Policies …`), numbered or not
+   — the shape `/substrate:add-doctrine` scaffolds;
+2. otherwise the numbered `## 2. …` slot, whatever its title.
+
+so the kernel's two doctrines both digest as-is without a heading rename that would orphan every
+`§Policy-N` cross-reference: this file resolves by position (§2, the authoring rules), and
+`agents-parallel-execution-doctrine.md` by name (`## Policies`). A doctrine that satisfies
+*neither* has no digest, and `doctrine-digest.sh` says so rather than printing something wrong.
+
+**What this asks of you as an author:** the Binding Rules section must stand alone. It is what a
+worker with no other context will act on, so it carries MUSTs and MUST NOTs, not narrative, and no
+"as described above" that dissolves when the section is lifted out. Everything else — rationale,
+cookbook, mermaid — stays in the body where the full read finds it.
 
 ## 3. The manifest — single source of truth
 
@@ -112,12 +155,47 @@ doctrines:
     path: docs/doctrine/agents-doctrine.md          # must exist
     pointers: [AGENTS.md]                            # docs that MUST contain a link to this doctrine
     summary: The doctrine on doctrines — …           # one-line "why read this"
+    triggers: [doctrine, manifest, drift]            # brief-content keywords (optional)
+    paths: [docs/doctrine/**, docs/scripts/doctrine-lint.sh]   # governed files (optional)
+    layer-hint: cross-cutting                        # optional
 ```
 
 **Why a manifest at all:** it turns "is every doctrine discoverable and correctly cross-linked?"
 from a question nobody answers into a machine-checkable invariant. Add a doctrine → register it
 here (and create at least one pointer). Rename/move one → update here + its pointers. The linter
 fails the build otherwise. **The manifest is also the entry point the drift agent enumerates** (§6).
+
+### 3.1 `triggers` vs `paths` — two different keys, two different questions
+
+They look alike and are not interchangeable:
+
+| key | matches | answers | consumed at |
+|---|---|---|---|
+| `triggers` | a **brief** (prose keywords) | "is this doctrine relevant to what the human asked for?" | spec time — which `doctrine-architect`s to dispatch; and as the *unlabelled-bead* fallback (below) |
+| `paths` | a bead's **write-scope** (file globs) | "does this doctrine *govern the files this work will edit*?" | graph time — which `doctrine:<id>` labels a bead carries |
+
+`paths` is optional and lists globs of the files the doctrine governs, relative to the repo root.
+It exists because prose matching cannot answer the file question: a bead whose write-scope is
+`convex/**` is bound by the backend doctrine whether or not its one-line goal happens to contain
+the word "backend". Declaring `paths` is what lets binding move from **pull** (the worker is told
+to go read something, unverifiably) to **push** (the dispatcher inlines the right doctrine's
+Binding-Rules digest into the worker's prompt — see the digest convention in §2.1).
+
+`triggers` keeps one job past spec time: it is the **fallback** a pull-side consumer uses on a bead
+that carries *no* `doctrine:<id>` label — beads graphed before label-stamping existed, and repos
+whose manifest declares no `paths:` at all. A labelled bead is resolved by its labels only;
+widening past them re-imports the guesswork the labels replaced.
+
+**Write `paths` as an inline list — `paths: [a/**, b/c.sh]`, on one line.** The manifest is read by
+a tiny zero-dep line parser that reuses the `pointers` bracket form, so a YAML block sequence
+(`paths:` then `- a/**`) parses as *nothing*: Gate 1 rule 6 goes silent and the graph-time binding
+step stamps no label, both reporting success. Same trap as an aspirational glob, one level lower.
+
+Rules: omit the key entirely when a doctrine has no stable file footprint — an absent `paths` is
+honest, an aspirational one is a lie the tooling will act on. Every declared glob must match at
+least one existing file (Gate 1 rule 6): a glob that has rotted past a rename silently governs
+nothing, which is worse than no glob at all, because the binding step reports success. Keep globs
+broad enough to survive ordinary refactors (`convex/**`, not a file list).
 
 ## 4. Cross-linking model + architecture
 
@@ -160,7 +238,7 @@ flowchart LR
   subgraph G1["GATE 1 — mechanical (deterministic)"]
     H["pre-commit hook<br/>.hooks/pre-commit"]
     C["CI step<br/>bash docs/scripts/doctrine-lint.sh"]
-    L["doctrine-lint.sh<br/>coverage · path · pointer"]
+    L["doctrine-lint.sh — 7 rules<br/>coverage · existence · pointers · skills<br/>history · paths · freshness (warn)"]
     H --> L
     C --> L
   end
@@ -172,14 +250,42 @@ flowchart LR
   COMMIT["a commit / PR touching code or docs"] --> G1 --> G2
 ```
 
-**Gate 1 — mechanical (`docs/scripts/doctrine-lint.sh`, pure bash, zero deps):**
-- **Coverage** — every `docs/doctrine/*-doctrine.md` is registered in the manifest.
-- **Existence** — every entry's `path` exists and matches `docs/doctrine/<id>-doctrine.md`.
-- **Pointers** — every `pointers[]` file exists *and links to* the doctrine (the rename-rot guard).
-- **Skills** — *if* managed ambient stubs exist under `.claude/skills/doctrine-*/` (§1.1's
-  bridge, written by `doctrine-skills-sync.sh`), they mirror the manifest 1:1 and reference the
-  right doctrine file. Zero managed stubs → the rule is silent, so repos that haven't adopted
-  the bridge stay green.
+**Gate 1 — mechanical (`docs/scripts/doctrine-lint.sh`, pure bash, zero deps).** Seven rules, in
+the order the script implements them (its header block enumerates the same seven). This numbering
+is the one the rest of this doctrine cites as "Gate 1 rule N":
+
+1. **Coverage** — every `docs/doctrine/*-doctrine.md` is registered in the manifest.
+2. **Existence** — every entry's `path` exists and matches `docs/doctrine/<id>-doctrine.md`.
+3. **Pointers** — every `pointers[]` file exists *and links to* the doctrine (the rename-rot guard).
+4. **Skills** — *if* managed ambient stubs exist under `.claude/skills/doctrine-*/` (§1.1's
+   bridge, written by `doctrine-skills-sync.sh`), they mirror the manifest 1:1 and reference the
+   right doctrine file. Zero managed stubs → the rule is silent, so repos that haven't adopted
+   the bridge stay green.
+5. **History** — no `Change Log` heading and no `**Version**` header in a *registered* doctrine
+   (§2 rule 8). The failure names the remedy: harvest-then-delete.
+6. **Paths** — every glob in an entry's optional `paths:` matches ≥1 existing file (§3.1). No
+   `paths` key → the rule is silent. Matching is bash-3.2 safe and deliberately permissive (a
+   `*` may cross `/`): the question is "does this still govern *something*", not "exactly what".
+7. **Freshness (advisory — warns, never fails)** — a registered doctrine whose `**Last verified**`
+   is absent, unparseable, or older than 6 months prints a warning; the exit code stays 0. It has
+   to be advisory: "is this still true?" is Gate 2's judgement call (§6), and a hook that blocked
+   the commit would only teach people to `--no-verify` or to bump the date without looking, which
+   is the failure mode the header exists to prevent. Date parsing probes BSD `date -j -f` then
+   GNU `date -d` — the two are mutually unintelligible and a hook runs on whatever the dev has.
+   **An absent header is the correct state for a doctrine no Gate-2 pass has ever cleared** — the
+   two kernel doctrines ship that way and warn on a fresh clone. The warning is a *scheduling*
+   signal, not a defect to silence: the only legitimate writers of the field are
+   `/substrate:add-doctrine`'s stub at authoring, `/substrate:adopt`'s harvest when it strips a
+   pre-existing `**Version**`/`Change Log` (Step 7.5), and a green Gate-2 pass (§6.1 step 6).
+   Hand-stamping a date to clear the warning re-creates the self-reported version number §2 rule 8
+   exists to abolish.
+
+- **Scope is one level deep, and that is load-bearing.** Coverage globs
+  `docs/doctrine/*-doctrine.md` — non-recursive — and every other rule scopes either to the
+  manifest's own entries or (rule 4) to the generated stubs. That is precisely what makes
+  retirement work: moving a doctrine into `docs/doctrine/archive/` (plus dropping its manifest
+  entry) is how it stops being governed. Make any rule recursive and archived doctrines get
+  linted again, breaking `--retire`.
 - Runs via `bash docs/scripts/doctrine-lint.sh`, called by **both** `.hooks/pre-commit` (local,
   installed by `git config core.hooksPath .hooks`; bypassable with `--no-verify`) **and**
   `.github/workflows/doctrine-lint.yml` (the unbypassable gate).
@@ -216,6 +322,16 @@ flowchart LR
 4. **Classify any mismatch** by the drift taxonomy (§6.2) and **severity** (§6.3).
 5. **Emit the report** (§6.4) — evidence + a concrete fix per finding. Do **not** edit doctrines
    yourself unless explicitly asked; your output is the finding.
+6. **Bump `Last verified` — but only on a green pass.** A doctrine you evaluated end-to-end with
+   **zero findings** gets its `**Last verified**: YYYY-MM-DD` header set to today's eval date (add
+   the header if the file has none — that's its first attestation). A doctrine with **any** finding
+   is left **untouched**: the header means "checked, and still true", so bumping it on a red pass
+   would launder a known-drifted doctrine as fresh — worse than no date at all. Same for a doctrine
+   you only partially evaluated: no full pass, no bump.
+   This is the **one** doctrine edit the drift agent makes unasked, and it is what makes the field
+   different from a hand-kept version number: a *machine* maintains it, as a side effect of an
+   actual verification, so it cannot drift from the thing it attests. Gate 1 rule 7 (§5) warns when
+   it goes stale past 6 months, which is the signal to schedule the next pass.
 
 ```mermaid
 flowchart LR
@@ -224,6 +340,8 @@ flowchart LR
   V -->|matches| OK["✓ no drift"]
   V -->|mismatch| D["classify: type + severity"]
   D --> R["drift report<br/>(evidence + fix)"]
+  OK --> B["bump <b>Last verified</b><br/>to the eval date"]
+  D -.->|red pass: leave the date alone| R
 ```
 
 ### 6.2 Drift taxonomy
@@ -255,6 +373,16 @@ Lead with a one-line verdict (`N findings: C critical, M major, m minor`), then 
 **completeness note**: which doctrines you fully evaluated, and any claim you *couldn't* verify
 (so a human knows the coverage of the pass). Silence is not proof of health — say what you checked.
 
+Close with a **freshness ledger** — one line per doctrine in the manifest:
+
+```
+doctrine | pass (green / findings / partial) | Last verified: <bumped to YYYY-MM-DD | unchanged, was YYYY-MM-DD | unchanged, absent>
+```
+
+It is the audit trail for the one mutation you are allowed to make (§6.1 step 6): every bump is
+justified by a green row, and every un-bumped doctrine says why. A reader must be able to check
+your date edits against your findings without re-running the pass.
+
 ### 6.5 Tuning the pass
 - **Scope to the diff when CI passes a changed-file set** — evaluate doctrines whose domain the PR
   touched first (a backend change → re-check the backend doctrine), then sweep the rest if budget
@@ -285,6 +413,11 @@ Lead with a one-line verdict (`N findings: C critical, M major, m minor`), then 
 - **Adding a doctrine without a manifest entry / pointer.** Gate 1 blocks it; don't `--no-verify`.
 - **"Fixing" drift by deleting the inconvenient claim.** If a claim is false, verify reality and
   correct it; don't quietly drop the invariant the claim was protecting.
+- **Changelog / version headers in a doctrine.** Git is the history, and a hand-kept log files
+  by date what agents query by topic (§2 rule 8). Gate 1 rule 5 fails it. The fix is
+  **harvest-then-delete** — fold each row's still-true rationale in as a why-note at the section
+  it cites, then remove the table/header (verbatim into the removal commit body). Never a bare
+  delete: the rows are earned knowledge in the wrong index, not noise.
 
 ## 9. Cookbook — authoring & maintenance
 
@@ -297,8 +430,11 @@ until green → commit (the hook re-checks). `/substrate:add-doctrine` automates
 `id` if the slug changed) → update every pointer's link → grep the repo for the old name → lint →
 commit. (This is exactly the rename that motivated Gate 1.)
 
-**Retire a doctrine.** Remove the manifest entry, the file, and inbound pointers together; grep for
-dangling references; lint.
+**Retire a doctrine.** `/substrate:add-doctrine --retire <id>` automates it: drop the manifest
+entry, move the file to `docs/doctrine/archive/` (that move is the de-registration — coverage is
+non-recursive, §5), fold still-true rules into the surviving doctrines, remove inbound pointers,
+re-run `docs/scripts/doctrine-skills-sync.sh` to sweep the ambient stub, then lint. Doing it by
+hand: the same steps, in that order; grep for dangling references before you lint.
 
 **Evaluate for drift (manual or the drift agent).** Follow §6. Quick local smoke:
 `bash docs/scripts/doctrine-lint.sh` for structure, then spot-check a doctrine's backticked paths exist.
@@ -311,6 +447,7 @@ or delete. Keeps the auto-loaded trigger layer thin and worth the context budget
 ## 10. Pointers
 - `docs/doctrine/doctrine-manifest.yaml` — the registry this doctrine governs.
 - `docs/scripts/doctrine-lint.sh` — the mechanical Gate 1 implementation.
+- `docs/scripts/doctrine-digest.sh` — prints a doctrine's Binding Rules digest (§2.1).
 - `.hooks/pre-commit`, `.github/workflows/doctrine-lint.yml` — where the gate is wired.
 - `AGENTS.md` — the root map; the spec/task lifecycle (`docs/tasks/`) that doctrines must *not* absorb.
 - `agents-parallel-execution-doctrine.md` — the parallel orchestration policy: the group-runner (window) role and the context-budget partition.
