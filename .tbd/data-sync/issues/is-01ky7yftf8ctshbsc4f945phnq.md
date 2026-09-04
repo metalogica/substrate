@@ -5,14 +5,14 @@ title: "Operator: run the 3 serve-v1 live drills (dispatch, actualize/merge, ful
 kind: task
 status: open
 priority: 1
-version: 1
+version: 3
 spec_path: docs/tasks/ongoing/serve-v1/serve-v1-spec.md
 labels:
   - epic:serve-v1
   - src:synth-serve-v1
 dependencies: []
 created_at: 2026-07-23T16:56:08.423Z
-updated_at: 2026-07-23T16:56:08.423Z
+updated_at: 2026-08-11T02:52:12.267Z
 ---
 ## Why now (session signal)
 The serve-v1 daemon shipped to main (aa2054a) but has NEVER been run live. Everything below the injectable seams (real gh api, real claude -p session, real git worktree) is proven only by mocks. The 3 out-of-band drill beads (sub-35nn, sub-x881, sub-b6au) were closed as "deferred — not run". This bead consolidates the operator verification.
