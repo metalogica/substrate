@@ -8,5 +8,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: doctrine-lint (coverage · path · pointer)
+      - name: doctrine-lint (coverage · existence · pointers · skills · history · paths)
         run: bash docs/scripts/doctrine-lint.sh

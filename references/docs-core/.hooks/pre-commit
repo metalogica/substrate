@@ -1,5 +1,7 @@
 #!/bin/sh
-# Gate 1 (mechanical): doctrine manifest coverage · path · pointer.
+# Gate 1 (mechanical): doctrine manifest coverage · existence · pointers · skills ·
+# history · paths, plus an advisory freshness warning. See docs/scripts/doctrine-lint.sh
+# for the authoritative rule list — this line is a summary, not the contract.
 # Activate once per clone:  git config core.hooksPath .hooks
 # Bypass in an emergency:   git commit --no-verify   (CI still enforces it)
 exec bash docs/scripts/doctrine-lint.sh
