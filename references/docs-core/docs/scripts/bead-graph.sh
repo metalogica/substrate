@@ -46,10 +46,18 @@ else
   exit 1
 fi
 
+# tbd <=0.3 accepts `--no-sync` (skip auto-sync on reads); 0.4+ REMOVED the flag (sync is
+# config-driven now — `auto_sync: false` makes it a no-op). Probe once and drop the flag when
+# unsupported: 0.4+ exits non-zero on the unknown option, every read below is `2>/dev/null`, so
+# an unconditional `--no-sync` yields an empty RAW and the script lies "no beads found" about a
+# fully-populated epic. Mirrors scripts/bead-tui/watch.mjs's probe-once.
+NO_SYNC="--no-sync"
+$TBD list --no-sync >/dev/null 2>&1 || NO_SYNC=""
+
 LIST_ARGS="--status $STATUS_FILTER"
 [ -n "$EPIC" ] && LIST_ARGS="$LIST_ARGS --label epic:$EPIC"
 
-RAW=$($TBD list $LIST_ARGS --no-sync 2>/dev/null)
+RAW=$($TBD list $LIST_ARGS $NO_SYNC 2>/dev/null)
 # Bead rows start with an id token `<prefix>-<alnum>`; skip the header + "N issue(s)" footer.
 # Drop `[epic]` container rows — the epic is the card/grouping, not a task in a wave.
 NODES=$(printf '%s\n' "$RAW" | grep -vE '\[epic\]' | grep -oE '^[[:alnum:]]+-[[:alnum:]]+' | sort -u)
@@ -67,7 +75,7 @@ NODE_SET=" $(printf '%s' "$NODES" | tr '\n' ' ') "   # space-delimited membershi
 EDGES=$(mktemp -t beadgraph-XXXXXX)
 trap 'rm -f "$EDGES"' EXIT
 for n in $NODES; do
-  for b in $($TBD dep list "$n" --no-sync 2>/dev/null \
+  for b in $($TBD dep list "$n" $NO_SYNC 2>/dev/null \
               | grep -i 'blocked by' \
               | grep -oE '[[:alnum:]]+-[[:alnum:]]+'); do
     case "$NODE_SET" in *" $b "*) printf '%s\t%s\n' "$n" "$b" >> "$EDGES" ;; esac
@@ -91,7 +99,7 @@ blockers_of() { grep -E "^$1"$'\t' "$EDGES" | cut -f2; }
 GROUPS=$(mktemp -t beadgrp-XXXXXX)
 trap 'rm -f "$EDGES" "$GROUPS"' EXIT
 for n in $NODES; do
-  g=$($TBD show "$n" --no-sync 2>/dev/null | grep -oE 'group:[[:alnum:]_-]+' | head -n1)
+  g=$($TBD show "$n" $NO_SYNC 2>/dev/null | grep -oE 'group:[[:alnum:]_-]+' | head -n1)
   [ -n "$g" ] && printf '%s\t%s\n' "$n" "$g" >> "$GROUPS"
 done
 group_of() { grep -E "^$1"$'\t' "$GROUPS" 2>/dev/null | cut -f2 | head -n1; }
