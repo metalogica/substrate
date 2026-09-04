@@ -128,6 +128,29 @@ overwrite — the repo owns its own file):
 grep -qxF ".substrate/runs/" .gitignore 2>/dev/null || printf '\n# Orchestration run-state (TTL-swept); execution-state.json stays tracked\n.substrate/runs/\n' >> .gitignore
 ```
 
+**Stamp the kernel version** into the target's `substrate.yaml`, so "which substrate adopted
+this repo?" is answerable later (`substrate --version` reads it as its `kernel:` line and
+warns on drift against the acting clone). Grammar is load-bearing — the reader greps
+`^# substrate-kernel:` and compares field 3 as the sha, so dirtiness is recorded in the
+parens, never appended to the sha:
+
+```bash
+kv=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SUBSTRATE_ROOT/.claude-plugin/plugin.json" | head -1)
+ksha=$(git -C "$SUBSTRATE_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
+kdirty=""; [ -n "$(git -C "$SUBSTRATE_ROOT" status --porcelain 2>/dev/null)" ] && kdirty=", dirty"
+stamp="# substrate-kernel: ${kv:-unknown} @ $ksha ($(date +%F)$kdirty)"
+if grep -q '^# substrate-kernel:' substrate.yaml; then
+  awk -v s="$stamp" '/^# substrate-kernel:/ { print s; next } { print }' substrate.yaml > substrate.yaml.tmp \
+    && mv substrate.yaml.tmp substrate.yaml
+else
+  printf '\n%s\n' "$stamp" >> substrate.yaml
+fi
+```
+
+Idempotent by construction: a re-adopt replaces the existing line, never accumulates a second.
+A `, dirty` stamp means the kernel came from an uncommitted clone state — worth flagging to the
+user in the handoff, since that install isn't reproducible from any commit.
+
 ### Step 6 — Wire the pre-commit hook + generate the ambient doctrine skills
 
 ```bash
@@ -266,6 +289,8 @@ Installed (stack untouched):
   .claude/skills/doctrine-*/ (ambient doctrine pointers, generated) ·
   .tbd/ (beads tracker, prefix <prefix>) · .hooks/pre-commit · .github/workflows/doctrine-lint.yml
 
+Kernel stamp: <the substrate-kernel line written in Step 5 — flag if it says ", dirty">
+
 Gate 1 (mechanical): green.
 
 Next:
@@ -287,6 +312,10 @@ Next:
   without the user's explicit choice (Step 4 / REFUSE table).
 - MUST fill `substrate.yaml`'s three gate commands from the user — never leave the `{{GATE_*}}`
   tokens in place (a token-valued gate makes `/substrate/execute` run a literal placeholder).
+- MUST write the `# substrate-kernel:` stamp in the reader's exact grammar (`<version> @ <sha>
+  (<date>[, dirty])` after the literal prefix) and keep it idempotent — replace, never
+  accumulate. It is a comment: no tool may treat it as schema; only readers (`substrate
+  --version`) parse it.
 - MUST ask the Step-3 **worktree-seed** question rather than silently shipping the empty commented
   stub — declare a populated `worktree-seed[]`/`toolchain-pin` block when the repo's gate needs
   gitignored inputs, so `/substrate/orchestrate` auto-seeds instead of the orchestrator hand-seeding.
