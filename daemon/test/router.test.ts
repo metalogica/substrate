@@ -89,8 +89,15 @@ describe("router.ts route() — the four §5.1 cases", () => {
     });
   });
 
+  it("kind:chore routes to the quick lane (the TUI's `t` key can reach it)", () => {
+    // `t` cycles task → feature → bug → chore, so chore is one keypress away.
+    // It used to bounce as "missing kind", which was wrong twice over: the kind
+    // was present, and the note sent the operator hunting a grooming gap.
+    expect(route(bead(["kind:chore"]))).toEqual({ action: "route", lane: "quick" });
+  });
+
   it("an unrecognised kind bounces with the needs-groom note", () => {
-    expect(route(bead(["kind:chore"]))).toEqual({
+    expect(route(bead(["kind:wat"]))).toEqual({
       action: "bounce",
       reason: MISSING_KIND_NOTE,
     });
@@ -115,8 +122,15 @@ describe("router.ts route() — the four §5.1 cases", () => {
     });
   });
 
-  it("an unrecognised native kind still bounces", () => {
+  it("a native chore kind routes, like the kind:chore label", () => {
     expect(route(bead(["groomed"], "fx-0004", "chore"))).toEqual({
+      action: "route",
+      lane: "quick",
+    });
+  });
+
+  it("an unrecognised native kind still bounces", () => {
+    expect(route(bead(["groomed"], "fx-0004", "wat"))).toEqual({
       action: "bounce",
       reason: MISSING_KIND_NOTE,
     });

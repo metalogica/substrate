@@ -28,9 +28,10 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { readState, writeState } from "./state.js";
-import { loadConfig, type Config } from "./config.js";
+import { loadConfig, type Config, type Mode } from "./config.js";
+import { loadGate, gateCommands } from "./gate.js";
 import { Queue } from "./queue.js";
-import { tick, createPrSweep, defaultRouter, systemClock, type TickDeps, type PrPort, type TidyHook } from "./tick.js";
+import { tick, createPrSweep, noopPrSweep, defaultRouter, systemClock, type TickDeps, type PrPort, type PrSweep, type TidyHook } from "./tick.js";
 import { reconcile, type Observed, type ObservedWorktree, type ObservedClaim, type PrAdapter, type TidyDeps } from "./tidy.js";
 import {
   reapWorktree,
@@ -106,42 +107,76 @@ function tbdInitialized(repo: string): void {
 }
 
 /**
+ * Prove the repo declares a gate the daemon can verify against. `mode: local`
+ * has no PR to observe, so `substrate.yaml`'s `gate:` block IS the done-signal
+ * (observe.ts) — without it every dispatched bead would fail the observation and
+ * bounce. Checked at BOOT rather than at dispatch so the operator finds out
+ * before a headless session has been paid for.
+ */
+function gateDeclared(repo: string): void {
+  if (gateCommands(loadGate(repo)).length === 0) {
+    throw new Error("no gate declared");
+  }
+}
+
+/**
  * Preflight probes (§1.3, §1.2). Each proves one prerequisite is present and
  * usable from the served repo. `tbd status` doubles as the "inside a tbd repo"
  * check — it exits non-zero outside an initialized board, so preflight fails
  * non-zero when run from a non-tbd dir.
+ *
+ * The set is MODE-DEPENDENT: `mode: github` needs an authenticated `gh`;
+ * `mode: local` needs a declared gate instead, and never touches `gh` at all.
  */
-const CHECKS: Check[] = [
-  {
-    name: "git",
-    run: (repo) => silentRun("git", ["rev-parse", "--is-inside-work-tree"], repo),
-    remedy: "git not found or not a git repo — install git and run serve from inside a git checkout.",
-  },
-  {
-    name: "tbd",
-    run: (repo) => tbdInitialized(repo),
-    remedy: "tbd unavailable or not a tbd repo — install tbd (npx get-tbd) and run serve from a tbd-enabled repo.",
-  },
-  {
-    name: "gh",
-    run: (repo) => silentRun("gh", ["auth", "status"], repo),
-    remedy: "gh missing or not authenticated — install the GitHub CLI and run `gh auth login`.",
-  },
-  {
-    name: "claude",
-    run: (repo) => silentRun("claude", ["--version"], repo),
-    remedy: "claude CLI not found — install Claude Code so the daemon can dispatch headless sessions.",
-  },
-];
+export function checksFor(mode: Mode): Check[] {
+  const common: Check[] = [
+    {
+      name: "git",
+      run: (repo) => silentRun("git", ["rev-parse", "--is-inside-work-tree"], repo),
+      remedy: "git not found or not a git repo — install git and run serve from inside a git checkout.",
+    },
+    {
+      name: "tbd",
+      run: (repo) => tbdInitialized(repo),
+      remedy: "tbd unavailable or not a tbd repo — install tbd (npx get-tbd) and run serve from a tbd-enabled repo.",
+    },
+    {
+      name: "claude",
+      run: (repo) => silentRun("claude", ["--version"], repo),
+      remedy: "claude CLI not found — install Claude Code so the daemon can dispatch headless sessions.",
+    },
+  ];
+
+  if (mode === "github") {
+    return [
+      ...common,
+      {
+        name: "gh",
+        run: (repo) => silentRun("gh", ["auth", "status"], repo),
+        remedy: "gh missing or not authenticated — install the GitHub CLI and run `gh auth login`.",
+      },
+    ];
+  }
+
+  return [
+    ...common,
+    {
+      name: "gate",
+      run: (repo) => gateDeclared(repo),
+      remedy:
+        "substrate.yaml declares no gate: block — mode: local verifies work by running the repo's own compile/test/lint, so add one (or set mode: github).",
+    },
+  ];
+}
 
 /**
- * Run every preflight probe against `repo`. Prints ONE actionable line per
- * failing check to stderr and returns `false`; returns `true` only when all
- * prerequisites are satisfied. Callers exit non-zero on `false`.
+ * Run every preflight probe against `repo` for its configured mode. Prints ONE
+ * actionable line per failing check to stderr and returns `false`; returns `true`
+ * only when all prerequisites are satisfied. Callers exit non-zero on `false`.
  */
-export function preflight(repo: string): boolean {
+export function preflight(repo: string, mode: Mode = "local"): boolean {
   let ok = true;
-  for (const check of CHECKS) {
+  for (const check of checksFor(mode)) {
     try {
       check.run(repo);
     } catch {
@@ -279,6 +314,45 @@ export function createPrAdapter(
       const prs = await listPrs(bead);
       // Terminal iff there is a PR and none of them are still open.
       return prs.length > 0 && prs.every((pr) => pr.state !== "OPEN");
+    },
+  };
+}
+
+/**
+ * Build tidy's {@link PrAdapter} for `mode: local` — the git-backed answer to the
+ * two questions §7 reconcile asks, with no `gh` anywhere.
+ *
+ * The mapping is exact, not approximate:
+ *   - `hasOpenPR` → "does this bead's branch carry work?" i.e. at least one commit
+ *     not already on the trunk. A worktree with commits is the local equivalent of
+ *     an open PR — the work exists and is awaiting the human's review — so boot-reap
+ *     KEEPS it. A worktree with none is stranded (session crashed, or refused the
+ *     bead) and gets reaped with its claim released back to the board.
+ *   - `isMergedOrClosed` → always `false`. Nothing is terminal in local mode: there
+ *     is no merge to detect, because landing the branch on trunk is the human's
+ *     call. Returning `true` here would make boot-reap reap a worktree WITHOUT
+ *     releasing its claim, stranding the bead in `in_progress` forever.
+ */
+export function createLocalPrAdapter(
+  plans: ReadonlyMap<string, WorktreePlan>,
+  trunk: string,
+  git: (args: string[], cwd: string) => string,
+  repoRoot: string,
+): PrAdapter {
+  return {
+    async hasOpenPR(bead: string): Promise<boolean> {
+      const plan = plans.get(bead);
+      if (plan === undefined) return false;
+      try {
+        const out = git(["rev-list", "--count", `${trunk}..${plan.branch}`], repoRoot);
+        return Number.parseInt(out.trim(), 10) > 0;
+      } catch {
+        // Branch gone / unreadable → no work to preserve; let it be reaped.
+        return false;
+      }
+    },
+    async isMergedOrClosed(): Promise<boolean> {
+      return false;
     },
   };
 }
@@ -490,7 +564,12 @@ export async function bootReap(bootDeps: BootReapDeps): Promise<void> {
  * out, so it is exercised live (bead sub-b6au), while `bootReap` itself is proven
  * against fakes.
  */
-export function assembleBootReap(repoRoot: string, config: Config, events: EventWriter): BootReapDeps {
+export function assembleBootReap(
+  repoRoot: string,
+  config: Config,
+  events: EventWriter,
+  trunk: string,
+): BootReapDeps {
   const queue = new Queue({ cwd: repoRoot });
   const runner = (args: string[]): string =>
     execFileSync("tbd", args, { cwd: repoRoot, encoding: "utf8" });
@@ -505,8 +584,12 @@ export function assembleBootReap(repoRoot: string, config: Config, events: Event
   const plans = new Map<string, WorktreePlan>();
   for (const wt of worktrees) plans.set(wt.bead, wt.plan);
 
-  const exec: Exec = realGhExec;
-  const prAdapter = createPrAdapter(liveListPrs(exec, plans));
+  // The ONLY gh-touching collaborator in boot-reap; local mode answers the same
+  // two questions from git instead.
+  const prAdapter =
+    config.mode === "github"
+      ? createPrAdapter(liveListPrs(realGhExec, plans))
+      : createLocalPrAdapter(plans, trunk, gitSync, repoRoot);
 
   const deps: TidyDeps = {
     queue: { release: (id) => queue.release(id) },
@@ -546,17 +629,10 @@ export function assembleTickDeps(opts: {
   state: TickDeps["state"];
   events: EventWriter;
 }): TickDeps {
-  const { repoRoot, config, trunk, state, events } = opts;
+  // `trunk` and `events` are consumed by the github sweep only, which takes
+  // `opts` whole — so they are deliberately not destructured here.
+  const { repoRoot, config, state } = opts;
   const queue = new Queue({ cwd: repoRoot });
-  const exec: Exec = realGhExec;
-
-  const prPort = createPrPort({ exec, branchPrefix: config.branchPrefix, repoRoot, trunk });
-
-  const tidyHook: TidyHook = async (bead, mergeSha) => {
-    // On a detected merge, ledger it then reap the bead's worktree (§7). The
-    // full reconcile runs at next boot; the on-merge path reaps the landed work.
-    events.emit({ event: "merge", bead, pr: mergeSha ?? undefined });
-  };
 
   const dispatch = createDispatch({
     repoRoot,
@@ -570,19 +646,40 @@ export function assembleTickDeps(opts: {
     config,
     state,
     clock: systemClock,
-    sweepPrs: createPrSweep({
-      prs: prPort,
-      actualize: async (spec) => {
-        events.emit({ event: "actualize", bead: spec.bead, pr: String(spec.pr) });
-        // The fresh actualize session itself shells out to claude — live only.
-      },
-      tidy: tidyHook,
-      queue: { close: (id, reason) => queue.close(id, reason) },
-      branchPrefix: config.branchPrefix,
-    }),
+    // Step 1 of the tick is the §6 PR-sweep. In local mode there are no PRs to
+    // sweep — no comments to actualize, no merge to detect — so the tick's own
+    // no-op seam is bound and the cycle goes straight to the capacity check.
+    sweepPrs: config.mode === "github" ? githubSweep(opts, queue) : noopPrSweep,
     route: defaultRouter,
     dispatch,
   };
+}
+
+/** The §6 gh-backed PR-sweep, assembled only when `mode: github`. */
+function githubSweep(
+  opts: { repoRoot: string; config: Config; trunk: string; events: EventWriter },
+  queue: Queue,
+): PrSweep {
+  const { repoRoot, config, trunk, events } = opts;
+  const exec: Exec = realGhExec;
+  const prPort = createPrPort({ exec, branchPrefix: config.branchPrefix, repoRoot, trunk });
+
+  const tidyHook: TidyHook = async (bead, mergeSha) => {
+    // On a detected merge, ledger it then reap the bead's worktree (§7). The
+    // full reconcile runs at next boot; the on-merge path reaps the landed work.
+    events.emit({ event: "merge", bead, pr: mergeSha ?? undefined });
+  };
+
+  return createPrSweep({
+    prs: prPort,
+    actualize: async (spec) => {
+      events.emit({ event: "actualize", bead: spec.bead, pr: String(spec.pr) });
+      // The fresh actualize session itself shells out to claude — live only.
+    },
+    tidy: tidyHook,
+    queue: { close: (id, reason) => queue.close(id, reason) },
+    branchPrefix: config.branchPrefix,
+  });
 }
 
 /**
@@ -612,7 +709,9 @@ export async function runTickCycle(opts: {
             event: "pr-open",
             bead: result.claimed.id,
             lane: result.routedTo,
-            pr: result.dispatch.prUrl,
+            // The evidence the work landed: a PR url in github mode, the
+            // `<worktree>#<branch>` pointer in local mode.
+            pr: result.dispatch.ref,
           });
         }
       }
@@ -674,11 +773,13 @@ function installSigintHandler(repo: string): void {
 export async function serveLoop(repo: string, config: Config): Promise<void> {
   const events = fileEventWriter(repo);
 
-  // Boot-reap (§7): reconcile from observed truth before the first tick.
-  await bootReap(assembleBootReap(repo, config, events));
-
-  // Resolve the trunk once for the PR-sweep's merge-detection fallback.
+  // Resolve the trunk once — the PR-sweep's merge-detection fallback needs it in
+  // github mode, and boot-reap's git-backed PrAdapter needs it in local mode, so
+  // it is resolved BEFORE the reap rather than after.
   const trunk = await resolveTrunkLive(repo);
+
+  // Boot-reap (§7): reconcile from observed truth before the first tick.
+  await bootReap(assembleBootReap(repo, config, events, trunk));
 
   // Carry the observability state across ticks; boot-reap just rewrote it.
   let state = readState(statePath(repo));
@@ -715,15 +816,17 @@ export function main(argv: string[] = process.argv.slice(2)): void {
   }
   const { repo } = parsed;
 
-  if (!preflight(repo)) {
+  // Config first: the mode decides WHICH prerequisites preflight even probes.
+  const config = loadConfig(repo);
+
+  if (!preflight(repo, config.mode)) {
     process.exit(1);
   }
 
   installSigintHandler(repo);
 
-  const config = loadConfig(repo);
   process.stdout.write(
-    `serve: preflight passed; boot-reap + tick loop starting (poll ${config.pollIntervalSec}s)\n`,
+    `serve: preflight passed [mode: ${config.mode}]; boot-reap + tick loop starting (poll ${config.pollIntervalSec}s)\n`,
   );
   serveLoop(repo, config).catch((err: unknown) => {
     process.stderr.write(`serve: loop failed: ${String(err)}\n`);

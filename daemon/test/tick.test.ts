@@ -111,13 +111,13 @@ function deps(over: Partial<TickDeps> & { queue: QueuePort }): TickDeps {
   };
 }
 
-/** A dispatch mock that observes an open PR (§5.2 pr-open). */
-function prOpenDispatch(prUrl = "https://gh/pr/1"): Dispatch {
-  return async (_b, lane) => ({ status: "pr-open", prUrl, branch: `serve/${lane}` });
+/** A dispatch mock that observes the work landed (§5.2). */
+function prOpenDispatch(ref = "https://gh/pr/1"): Dispatch {
+  return async (_b, lane) => ({ status: "landed", ref, branch: `serve/${lane}` });
 }
-/** A dispatch mock that observes NO PR (§5.2 no-pr). */
+/** A dispatch mock that observes NOTHING landed (§5.2). */
 function noPrDispatch(logPath = "/logs/x.1.log"): Dispatch {
-  return async (_b, lane) => ({ status: "no-pr", logPath, branch: `serve/${lane}` });
+  return async (_b, lane) => ({ status: "no-landing", logPath, branch: `serve/${lane}` });
 }
 
 describe("tick — one poll cycle (§4)", () => {
@@ -248,10 +248,10 @@ describe("tick — dispatch step 6 + §5.2 failure policy", () => {
     const result = await tick(deps({ queue: q, dispatch: prOpenDispatch("https://gh/pr/7") }));
 
     expect(result.routedTo).toBe("quick");
-    // Route stamp, then in-review stamp with the PR url.
+    // Route stamp, then in-review stamp with the evidence ref.
     expect(q.calls).toContainEqual({ op: "stamp", id: "fx-1", route: "quick", note: "serve: routed quick" });
-    expect(q.calls).toContainEqual({ op: "stamp", id: "fx-1", inReview: true, note: "serve: PR https://gh/pr/7" });
-    expect(result.dispatch).toEqual({ status: "in-review", prUrl: "https://gh/pr/7" });
+    expect(q.calls).toContainEqual({ op: "stamp", id: "fx-1", inReview: true, note: "serve: landed https://gh/pr/7" });
+    expect(result.dispatch).toEqual({ status: "in-review", ref: "https://gh/pr/7" });
   });
 
   it("first no-PR: HOLDS the claim, notes the failure, marks retried (retry next tick)", async () => {
@@ -283,27 +283,63 @@ describe("tick — dispatch step 6 + §5.2 failure policy", () => {
 describe("applyDispatchPolicy — §5.2 in isolation", () => {
   const b = bead(1);
 
-  it("pr-open → stamp in-review + PR url", () => {
+  it("landed → stamp in-review + the evidence ref", () => {
     const q = fakeQueue([]);
-    const out = applyDispatchPolicy(q, b, { status: "pr-open", prUrl: "u", branch: "br" });
-    expect(out).toEqual({ status: "in-review", prUrl: "u" });
-    expect(q.calls).toContainEqual({ op: "stamp", id: b.id, inReview: true, note: "serve: PR u" });
+    const out = applyDispatchPolicy(q, b, { status: "landed", ref: "u", branch: "br" });
+    expect(out).toEqual({ status: "in-review", ref: "u" });
+    expect(q.calls).toContainEqual({ op: "stamp", id: b.id, inReview: true, note: "serve: landed u" });
   });
 
-  it("first no-pr → held-retry (note + retry marker, no release)", () => {
+  it("first no-landing → held-retry (note + retry marker, no release)", () => {
     const q = fakeQueue([]);
-    const out = applyDispatchPolicy(q, b, { status: "no-pr", logPath: "/l", branch: "br" });
+    const out = applyDispatchPolicy(q, b, { status: "no-landing", logPath: "/l", branch: "br" });
     expect(out).toEqual({ status: "held-retry", logPath: "/l" });
     expect(q.calls.some((c) => c.op === "release")).toBe(false);
     expect(q.calls).toContainEqual({ op: "addLabel", id: b.id, label: RETRIED_LABEL });
   });
 
-  it("retried no-pr → bounced-failed (release + note)", () => {
+  it("retried no-landing → bounced-failed (release + note)", () => {
     const q = fakeQueue([]);
     const retried = bead(1, { labels: ["groomed", RETRIED_LABEL] });
-    const out = applyDispatchPolicy(q, retried, { status: "no-pr", logPath: "/l", branch: "br" });
+    const out = applyDispatchPolicy(q, retried, { status: "no-landing", logPath: "/l", branch: "br" });
     expect(out).toEqual({ status: "bounced-failed", logPath: "/l" });
     expect(q.calls).toContainEqual({ op: "release", id: retried.id });
+  });
+
+  it("carries the observation's reason into the failure note (mode: local)", () => {
+    // github mode has only "no PR" to report; local mode knows WHY — and the
+    // board should say so rather than just that the bead came back.
+    const q = fakeQueue([]);
+    applyDispatchPolicy(q, b, {
+      status: "no-landing",
+      logPath: "/l",
+      branch: "br",
+      reason: "session made no commits",
+    });
+    expect(q.calls).toContainEqual({
+      op: "stamp",
+      id: b.id,
+      note: "serve: lane failed — session made no commits (log /l)",
+    });
+  });
+
+  it("applies the SAME policy regardless of how the outcome was observed", () => {
+    // The §5.2 failure policy must be mode-invariant: a PR url and a local
+    // worktree pointer are both just `ref`, and neither changes the transitions.
+    const local = fakeQueue([]);
+    const github = fakeQueue([]);
+    const a = applyDispatchPolicy(local, b, {
+      status: "landed",
+      ref: "/wt/sub-a#serve/sub-a",
+      branch: "serve/sub-a",
+    });
+    const c = applyDispatchPolicy(github, b, {
+      status: "landed",
+      ref: "https://gh/pr/1",
+      branch: "serve/sub-a",
+    });
+    expect(a.status).toBe(c.status);
+    expect(local.calls.map((x) => x.op)).toEqual(github.calls.map((x) => x.op));
   });
 });
 

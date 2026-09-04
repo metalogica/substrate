@@ -11,6 +11,7 @@ import {
   resolveTrunk,
   createWorktree,
   reapWorktree,
+  hasOrigin,
   realGit,
 } from "../src/worktree.js";
 
@@ -105,6 +106,88 @@ function makeFixture(): { root: string; repoRoot: string } {
 
   return { root, repoRoot };
 }
+
+/**
+ * A LOCAL-ONLY fixture: `git init`, one commit on `main`, and **no remote at
+ * all**. This is the `mode: local` shape — the board a user gets from `git init`
+ * without ever touching GitHub — and every `origin/*` probe must miss on it.
+ */
+function makeLocalFixture(branch = "main"): { root: string; repoRoot: string } {
+  const root = mkdtempSync(join(tmpdir(), "serve-wt-local-"));
+  const repoRoot = join(root, "repo");
+  const runIn = (cwd: string, args: string[]) =>
+    execFileSync("git", args, { cwd, stdio: "pipe" });
+
+  execFileSync("git", ["init", "-b", branch, repoRoot], { stdio: "pipe" });
+  runIn(repoRoot, ["config", "user.email", "fixture@example.com"]);
+  runIn(repoRoot, ["config", "user.name", "Fixture"]);
+  writeFileSync(join(repoRoot, "README.md"), "local\n", "utf8");
+  runIn(repoRoot, ["add", "-A"]);
+  runIn(repoRoot, ["commit", "-m", "seed"]);
+
+  return { root, repoRoot };
+}
+
+describe("mode: local — a repo with no remote at all", () => {
+  let fx: { root: string; repoRoot: string };
+  afterEach(() => {
+    rmSync(fx.root, { recursive: true, force: true });
+  });
+
+  it("hasOrigin is false without a remote, true with one", async () => {
+    fx = makeLocalFixture();
+    expect(await hasOrigin(fx.repoRoot, realGit)).toBe(false);
+
+    const withOrigin = makeFixture();
+    try {
+      expect(await hasOrigin(withOrigin.repoRoot, realGit)).toBe(true);
+    } finally {
+      rmSync(withOrigin.root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolveTrunk falls back to the LOCAL main when no origin ref exists", async () => {
+    // Before this fallback, resolveTrunk threw here and NO bead could ever be
+    // dispatched on a local-only board — the loop was unreachable by construction.
+    fx = makeLocalFixture("main");
+    expect(await resolveTrunk(fx.repoRoot, realGit)).toBe("main");
+  });
+
+  it("resolveTrunk falls back to the current HEAD branch when it is not main/master", async () => {
+    fx = makeLocalFixture("trunk");
+    expect(await resolveTrunk(fx.repoRoot, realGit)).toBe("trunk");
+  });
+
+  it("creates a worktree off the local trunk and reports its base sha", async () => {
+    fx = makeLocalFixture();
+    const trunk = await resolveTrunk(fx.repoRoot, realGit);
+    const plan = planWorktree({
+      repoRoot: fx.repoRoot,
+      beadId: "sub-loc1",
+      slug: "local only",
+      worktreeRoot: join(fx.root, "repo-serve"),
+    });
+
+    const { baseSha } = await createWorktree({
+      repoRoot: fx.repoRoot,
+      plan,
+      trunk,
+      git: realGit,
+      remote: false,
+    });
+
+    expect(existsSync(join(plan.path, "README.md"))).toBe(true);
+    // The base sha is the trunk tip the branch was cut from — the anchor
+    // observe.ts counts commits against.
+    const trunkSha = execFileSync("git", ["rev-parse", trunk], {
+      cwd: fx.repoRoot,
+      encoding: "utf8",
+    }).trim();
+    expect(baseSha).toBe(trunkSha);
+
+    await reapWorktree({ repoRoot: fx.repoRoot, plan, git: realGit });
+  });
+});
 
 describe("worktree lifecycle on a fixture repo", () => {
   let fixture: { root: string; repoRoot: string };

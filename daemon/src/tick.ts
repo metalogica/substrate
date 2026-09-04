@@ -18,7 +18,7 @@
 // next boot reaps or resumes it from that truth.
 
 import { route as routeBead, logOverride, bounce } from "./router.js";
-import { bounceAdapter } from "./triage.js";
+import { bounceAdapter, failureNote } from "./triage.js";
 import type { Bead, Route } from "./queue.js";
 import type { InFlight, State } from "./state.js";
 import type { Config, Lane } from "./config.js";
@@ -305,9 +305,12 @@ export type TickStop = "at-capacity" | "empty-queue" | "bounced";
 
 /** What the dispatch of the claimed bead resolved to this cycle (§5.2). */
 export type DispatchOutcome =
-  /** Branch pushed ∧ PR open: bead stamped `in-review` with the url. */
-  | { status: "in-review"; prUrl: string }
-  /** Session exited without a PR, first failure: claim HELD, retry next tick. */
+  /**
+   * The work is verifiably there: bead stamped `in-review` with `ref` as the
+   * evidence — a PR url in `mode: github`, `<worktree>#<branch>` in `mode: local`.
+   */
+  | { status: "in-review"; ref: string }
+  /** Nothing verifiable landed, first failure: claim HELD, retry next tick. */
   | { status: "held-retry"; logPath: string }
   /** Second failure: claim released, bounced with the failure note. */
   | { status: "bounced-failed"; logPath: string };
@@ -429,11 +432,14 @@ export async function tick(deps: TickDeps): Promise<TickResult> {
  * result, driving the claim's fate through the queue — the single place the
  * failure policy lives:
  *
- *   - `pr-open`  → stamp `in-review` + `serve: PR <url>` (routed → in-review).
- *   - `no-pr`, first failure (no {@link RETRIED_LABEL}) → HOLD the claim, note
- *     `serve: lane failed (log <path>)`, add the retry marker → retried next tick.
- *   - `no-pr`, already retried → BOUNCE: release the claim + the failure note
+ *   - `landed`  → stamp `in-review` + `serve: landed <ref>` (routed → in-review).
+ *   - `no-landing`, first failure (no {@link RETRIED_LABEL}) → HOLD the claim, note
+ *     the failure + its log, add the retry marker → retried next tick.
+ *   - `no-landing`, already retried → BOUNCE: release the claim + the failure note
  *     (via `router.bounce`), so the bead returns to the board with the reason.
+ *
+ * MODE-INVARIANT by construction: the policy reads only `result.status`, never how
+ * the outcome was observed, so `mode: local` and `mode: github` share it verbatim.
  *
  * Pure over the injected queue — no git/gh/fs — so the policy is unit-testable.
  */
@@ -442,13 +448,13 @@ export function applyDispatchPolicy(
   bead: Bead,
   result: DispatchResult,
 ): DispatchOutcome {
-  if (result.status === "pr-open") {
-    queue.stamp(bead.id, { inReview: true, note: `serve: PR ${result.prUrl}` });
-    return { status: "in-review", prUrl: result.prUrl };
+  if (result.status === "landed") {
+    queue.stamp(bead.id, { inReview: true, note: `serve: landed ${result.ref}` });
+    return { status: "in-review", ref: result.ref };
   }
 
-  // no-pr (§5.2). Second failure (retry marker already present) → bounce.
-  const failNote = `serve: lane failed (log ${result.logPath})`;
+  // no-landing (§5.2). Second failure (retry marker already present) → bounce.
+  const failNote = failureNote(result.logPath, result.reason);
   if (bead.labels.includes(RETRIED_LABEL)) {
     bounce(bounceAdapter(queue), bead, failNote);
     return { status: "bounced-failed", logPath: result.logPath };

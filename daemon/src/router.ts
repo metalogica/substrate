@@ -55,10 +55,17 @@ export function kindOf(bead: Bead): string | undefined {
  * The pure §5.1 decision. No model, no side effects, no adapter — a function of the
  * bead's own metadata only:
  *
- *   - `needs-spec` label      → bounce (the spec lane is human, by design).
- *   - `kind:bug`              → route to the **bug** lane (`/substrate:diagnose`).
- *   - `kind:feature|task`     → route to the **quick** lane (`/substrate:quick-spec`).
- *   - missing / other `kind`  → bounce with `needs-groom: missing kind`.
+ *   - `needs-spec` label            → bounce (the spec lane is human, by design).
+ *   - `kind:bug`                    → route to the **bug** lane.
+ *   - `kind:feature|task|chore`     → route to the **quick** lane.
+ *   - missing / other `kind`        → bounce with `needs-groom: missing kind`.
+ *
+ * `chore` routes rather than bouncing because the board TUI's `t` key cycles
+ * `task → feature → bug → chore` (`scripts/bead-tui/watch.mjs`), so it is a kind a
+ * human can reach in one keypress. Bouncing it as "missing kind" was doubly wrong:
+ * the kind was present, and the note sent the operator looking for a grooming gap
+ * that did not exist. `epic` is deliberately still absent — epic beads belong to
+ * `/substrate:orchestrate`, and `Queue.list` already filters them out upstream.
  */
 export function route(bead: Bead): RouteDecision {
   if (bead.labels.includes(NEEDS_SPEC_LABEL)) {
@@ -71,6 +78,7 @@ export function route(bead: Bead): RouteDecision {
       return { action: "route", lane: "bug" };
     case "feature":
     case "task":
+    case "chore":
       return { action: "route", lane: "quick" };
     default:
       return { action: "bounce", reason: MISSING_KIND_NOTE };

@@ -23,6 +23,9 @@ The plugin exposes:
   - `/substrate:add-doctrine <name>` — scaffold a new doctrine + manifest entry for horizontal expansion (infra, claw, treasury, etc.)
   - `/substrate:spool` — close a big-context session and reopen its *position* in a fresh session through a lightweight, verified pointer (cheaper + safer than `/compact` or `/clear`). Grounds every anchor against the repo, batches a single HIL checkpoint over unverifiable claims + repo/chat conflicts, writes a launcher to an out-of-repo ID-keyed store (`~/.substrate/spool/`, TTL-swept — commits nothing). `--resume <id>` re-verifies volatile anchors, confirms, deletes (`--keep` to retain); `--list` shows the store. Sits one tier *above* `synthesize-session`: synthesize captures per-spec learning, spool carries campaign position across specs.
 
+- **1 daemon-invoked skill** under `skills/` (not user-facing — no human invokes it):
+  - `/substrate:serve-bead` — the serve daemon's **lane skill**: what a headless `claude -p` session runs inside a freshly-cut worktree to execute ONE bead. Assess → declare scope → implement → run the repo's own `substrate.yaml` gate → one local commit. Two arms make it a daemon skill rather than a headless `quick-spec`: an **under-specified bead is refused** (state what's missing, exit with NO commit, so the daemon bounces it back to the board — the machine's equivalent of asking), and a **red gate stops short of committing** after at most two targeted fixes. Never runs tbd; never pushes in `mode: local`. The standing rules live here rather than in the daemon's prompt string, so the lane contract is versioned with the repo.
+
 - **2 subagents** under `agents/`:
   - `doctrine-architect` — generic, parameterized doctrine specialist. Spawned by orchestrator skills (`/substrate:architect-spec`, `/substrate:migrate`) once per relevant doctrine; binds to whichever doctrine file it's given. Orchestration runs at skill level (depth 0) so the fan-out can spawn N children — subagents cannot themselves spawn subagents.
   - `bead-implementer` — **group-runner** spawned by `/substrate:orchestrate`, one per file-disjoint ready **window** (a `group:<window-N>` of file-adjacent beads) in its own git worktree. Implements the N beads of that group in sequence against inlined per-bead Goal/Files/Gate tuples, gating each bead as it lands and stopping the window on the first red gate, then reports a per-bead pass/fail ledger + a diff summary. Touches neither the tracker nor the remote (`permission.task: deny`; "no tbd, no git push" prompt-enforced) — single-writer stays with the orchestrator.
@@ -84,7 +87,7 @@ To test scaffolding in isolation, `cd` into a fresh sandbox directory and invoke
 substrate/
 ├── .claude-plugin/plugin.json     # plugin manifest
 ├── agents/                         # 2 subagents (markdown with YAML frontmatter)
-├── skills/                         # 13 user-facing skills
+├── skills/                         # 13 user-facing + 1 daemon-invoked (serve-bead)
 │   ├── init/SKILL.md
 │   ├── adopt/SKILL.md
 │   ├── migrate/SKILL.md
@@ -133,7 +136,7 @@ Users invoke skills (`/substrate:init`, `/substrate:architect-spec`, etc.). Skil
 
 ### OpenCode port (additive, kept in parity)
 
-substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports the 13 skills to
+substrate also runs inside **OpenCode** (`1.17.14`). The `opencode/` tree ports all 14 skills to
 OpenCode **commands** (`opencode/command/substrate/<name>.md` → `/substrate/<name>`) and both
 `doctrine-architect` and `bead-implementer` to OpenCode **agents** (`mode: subagent`). Install by symlink with
 `scripts/opencode-link.sh` (undo: `opencode-unlink.sh`) — the OpenCode mirror of the Claude Code

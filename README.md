@@ -166,7 +166,7 @@ This removes the symlink, reinstalls from the marketplace, and leaves you pointi
 
 ## Using substrate in OpenCode
 
-substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). The plugin's 13 skills are
+substrate also runs inside [OpenCode](https://opencode.ai) (`1.17.14`). All 14 of the plugin's skills are
 ported to OpenCode **commands** and the `doctrine-architect` + `bead-implementer` subagents to OpenCode **agents**,
 living in the version-controlled `opencode/` tree. See `opencode/README.md` for the full
 SKILL→command translation guide and `opencode/CONVENTIONS.md` for the empirically-verified OpenCode

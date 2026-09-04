@@ -92,10 +92,28 @@ export function planWorktree(opts: {
 // ── Git-touching lifecycle ───────────────────────────────────────────────────
 
 /**
- * Resolve the repo's trunk branch (the default branch on `origin`). Reads
- * `origin/HEAD`; falls back to `main` then `master` if the symbolic ref is
- * unset (common in fixture repos with no configured HEAD). Returns the short
- * branch name (e.g. `main`).
+ * Does this repo have an `origin` remote at all? A local-only board (`git init`
+ * with nothing pushed) has none, and every `origin/*` probe below would fail —
+ * so we ask once and take the local path instead of throwing.
+ */
+export async function hasOrigin(repoRoot: string, git: GitExec = realGit): Promise<boolean> {
+  try {
+    const out = await git(["remote"], repoRoot);
+    return out.split(/\r?\n/).some((line) => line.trim() === "origin");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the repo's trunk branch. Prefers the default branch on `origin`
+ * (`origin/HEAD`, else `origin/main`, else `origin/master`), then falls back to
+ * a LOCAL trunk (`main`, `master`, else whatever branch `HEAD` is on) so a repo
+ * with no remote still resolves. Returns the short branch name (e.g. `main`).
+ *
+ * The local fallback is what makes `mode: local` possible at all: before it,
+ * a `git init` board with nothing pushed threw here and no bead could ever be
+ * dispatched.
  */
 export async function resolveTrunk(repoRoot: string, git: GitExec = realGit): Promise<string> {
   try {
@@ -114,15 +132,48 @@ export async function resolveTrunk(repoRoot: string, git: GitExec = realGit): Pr
       // try next
     }
   }
+
+  // No usable origin ref — resolve a LOCAL trunk instead.
+  for (const candidate of ["main", "master"]) {
+    try {
+      await git(["rev-parse", "--verify", `refs/heads/${candidate}`], repoRoot);
+      return candidate;
+    } catch {
+      // try next
+    }
+  }
+  // Last resort: whatever branch the checkout is currently on.
+  try {
+    const head = (await git(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot)).trim();
+    if (head && head !== "HEAD") return head;
+  } catch {
+    // detached or unborn HEAD — fall through to the error.
+  }
+
   throw new Error(
-    "resolveTrunk: could not determine origin trunk (no origin/HEAD, origin/main, or origin/master)",
+    "resolveTrunk: could not determine a trunk branch (no origin/HEAD, origin/main, origin/master, local main/master, or a named HEAD)",
   );
 }
 
+/** A created worktree: where it is, and the commit its branch was cut from. */
+export interface CreatedWorktree {
+  readonly plan: WorktreePlan;
+  /**
+   * The sha the branch was cut from. `mode: local` needs this to answer "did the
+   * session actually commit anything?" — `rev-list --count <baseSha>..HEAD` — so
+   * it is captured at creation rather than re-derived later, when the trunk may
+   * already have moved.
+   */
+  readonly baseSha: string;
+}
+
 /**
- * Create the bead's worktree: fetch the trunk fresh from origin, then
- * `git worktree add -b <branch> <path> origin/<trunk>` so the branch is cut
- * from the freshly-fetched trunk tip at dispatch time (§3.3). Returns the plan.
+ * Create the bead's worktree and report where its branch starts (§3.3).
+ *
+ * With a remote (`remote: true`, the default): fetch the trunk fresh from origin,
+ * then cut the branch from `origin/<trunk>` so it starts at the current origin tip.
+ * Without one (`remote: false` — a local-only board): skip the fetch entirely and
+ * cut from the LOCAL `<trunk>` ref, since `origin/<trunk>` does not exist.
  *
  * Idempotency is the caller's concern (boot-reap, §7) — this assumes a clean slot.
  */
@@ -131,16 +182,31 @@ export async function createWorktree(opts: {
   plan: WorktreePlan;
   trunk: string;
   git?: GitExec;
-}): Promise<WorktreePlan> {
+  /** Whether an `origin` remote exists. Defaults to `true` (the §3.3 contract). */
+  remote?: boolean;
+}): Promise<CreatedWorktree> {
   const git = opts.git ?? realGit;
   const { repoRoot, plan, trunk } = opts;
-  // Fetch the trunk fresh so the branch is cut off the current origin tip.
-  await git(["fetch", "origin", trunk], repoRoot);
-  await git(
-    ["worktree", "add", "-b", plan.branch, plan.path, `origin/${trunk}`],
-    repoRoot,
-  );
-  return plan;
+  const remote = opts.remote ?? true;
+
+  const base = remote ? `origin/${trunk}` : trunk;
+  if (remote) {
+    // Fetch the trunk fresh so the branch is cut off the current origin tip.
+    await git(["fetch", "origin", trunk], repoRoot);
+  }
+  await git(["worktree", "add", "-b", plan.branch, plan.path, base], repoRoot);
+
+  // Record the starting commit while it is unambiguous — read from the worktree
+  // itself, so it is the sha actually checked out rather than a re-resolution.
+  let baseSha = "";
+  try {
+    baseSha = (await git(["rev-parse", "HEAD"], plan.path)).trim();
+  } catch {
+    // A stubbed git (tests) may not answer rev-parse; an empty baseSha degrades
+    // the commit count to "everything reachable from HEAD", never to a crash.
+  }
+
+  return { plan, baseSha };
 }
 
 /**
