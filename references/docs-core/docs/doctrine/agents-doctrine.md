@@ -60,6 +60,16 @@ you're working); the doctrine is the **depth** tier. A doctrine can't auto-load 
 thin context file shouldn't carry depth. A nested `CLAUDE.md` at an architectural boundary is a
 *good* pattern for exactly this reason.
 
+**The ambient bridge (generated, never hand-kept):** `docs/scripts/doctrine-skills-sync.sh`
+renders each manifest entry into a thin Claude Code project skill at
+`.claude/skills/doctrine-<id>/SKILL.md` — description (always in context) = the manifest's
+`summary` + `triggers`, body = a *pointer* to the doctrine file. That gives every doctrine a
+trigger-tier presence in **any** session, orchestrated or not: an agent working in a doctrine's
+scope self-loads it via ordinary skill selection. The stubs are pure derived artifacts —
+regenerate them after any manifest change; never edit one by hand (the sync marker is how the
+tooling tells its own stubs from yours, and Gate 1 rule 4 keeps them in lock-step with the
+manifest).
+
 **The contract (enforced by judgement in review + the Gate-2 eval, §6):**
 - **Thin orientation + a pointer**, never a copy of the doctrine. The day a context file restates
   doctrine content it becomes drift bait → collapse it to a stub + link.
@@ -166,6 +176,10 @@ flowchart LR
 - **Coverage** — every `docs/doctrine/*-doctrine.md` is registered in the manifest.
 - **Existence** — every entry's `path` exists and matches `docs/doctrine/<id>-doctrine.md`.
 - **Pointers** — every `pointers[]` file exists *and links to* the doctrine (the rename-rot guard).
+- **Skills** — *if* managed ambient stubs exist under `.claude/skills/doctrine-*/` (§1.1's
+  bridge, written by `doctrine-skills-sync.sh`), they mirror the manifest 1:1 and reference the
+  right doctrine file. Zero managed stubs → the rule is silent, so repos that haven't adopted
+  the bridge stay green.
 - Runs via `bash docs/scripts/doctrine-lint.sh`, called by **both** `.hooks/pre-commit` (local,
   installed by `git config core.hooksPath .hooks`; bypassable with `--no-verify`) **and**
   `.github/workflows/doctrine-lint.yml` (the unbypassable gate).

@@ -165,6 +165,11 @@ Next steps:
          /prototype/<project-slug>/vite.config.ts
          ...
   7. Return here and run /substrate/migrate.
+
+Doctrine note: the three baseline doctrines are discovered by glob (no manifest yet).
+When the doctrine tree grows, /substrate/add-doctrine can bootstrap the manifest —
+in adopted repos it also generates ambient doctrine skills (.claude/skills/doctrine-*/)
+so every Claude Code session self-loads relevant doctrine.
 ```
 
 Then show the contents of `docs/product/ai-studio-prompt.md` in-line so the user can copy without opening a second file.
