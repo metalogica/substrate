@@ -188,6 +188,21 @@ If triggers is empty (Q5 default-escape), write `triggers: []` on one line — t
   ```
 - **`n`**: skip. The new doctrine is still discoverable via the glob fallback in orchestrators.
 
+### Step 4.5 — Regenerate the ambient doctrine skills (adopt-lineage projects)
+
+If **both** `docs/doctrine/doctrine-manifest.yaml` and `docs/scripts/doctrine-skills-sync.sh`
+exist (an adopted project), run:
+
+```bash
+bash docs/scripts/doctrine-skills-sync.sh
+```
+
+This re-derives the `.claude/skills/doctrine-*/` pointer stubs from the manifest (a Claude Code
+ambient surface; OpenCode sessions get passive doctrine context via `AGENTS.md`) — and keeps
+doctrine-lint rule 4 (stub↔manifest parity) green. If either file is absent (init-lineage
+project, or Branch B declined), skip silently — nothing to sync, and lint's rule 4 stays silent
+without stubs.
+
 ### Step 5 — Handoff
 
 Print:
@@ -197,6 +212,7 @@ Print:
 
   File:           <path written in Step 3>
   Manifest:       <"updated" | "bootstrapped (N entries including this one)" | "skipped (glob fallback handles discovery)">
+  Ambient skill:  <".claude/skills/doctrine-<name>/ regenerated" | "skipped (no sync script / no manifest)">
   Layer hint:     <value or "(omitted — orchestrator will infer)">
   Triggers:       <comma-separated list or "(always relevant)">
 
@@ -228,6 +244,7 @@ If the project has a manifest-coverage test (heuristic: `find . -name 'doctrine-
 - **MUST** validate `$ARGUMENTS` is kebab-case and doesn't already end in `-doctrine`. The command adds that suffix; the id is the bare name.
 - **MUST NOT** clobber an existing `<name>-doctrine.md`. Check before writing; if a file exists, route through the REFUSE table.
 - **MUST** preserve existing manifest comments and entries when appending. Use text-edit, not YAML round-trip serialization — comment-preserving YAML libraries are not available in this context.
+- **MUST** run `docs/scripts/doctrine-skills-sync.sh` after a manifest write when the script exists (Step 4.5) — a manifest that gains an entry without regenerated stubs fails doctrine-lint rule 4 in adopted repos. Never write a `.claude/skills/doctrine-*/` stub by hand.
 - **MUST NOT** commit. The user reviews the stub first; commits are their gesture, not the command's.
 - **MUST** offer the default-escape suffix `[type 'default' to let me decide sensible defaults]` on Q&A questions (Q1-Q5). Binary approval gates (`y / n`) are exempt.
 - **MUST** detect the project's nesting convention (flat / nested / mixed) and default the path question accordingly. Forcing flat onto a nested project is a real bug.
