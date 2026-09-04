@@ -3,13 +3,15 @@ type: is
 id: is-01m1pwcvyhybknz9fdcv502dcz
 title: "substrate --version: tooling vs installed-kernel report (reader for sub-0uxw)"
 kind: feature
-status: open
+status: closed
 priority: 2
-version: 1
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-09-04T18:55:16.431Z
-updated_at: 2026-09-04T18:55:16.431Z
+updated_at: 2026-09-04T19:27:38.919Z
+closed_at: 2026-09-04T19:27:38.919Z
+close_reason: Merged to main at 590a01a; bare 'substrate --version' verified via PATH shim. Kernel line + drift warning activate when sub-0uxw ships the adopt stamp.
 ---
 ## Why now
 Companion/reader for sub-0uxw (adopt stamps kernel version+commit). Operator wants
@@ -36,3 +38,7 @@ which will act on it now" — the kubectl client/server split.
 > Constraints: no new deps; degrade gracefully outside git repos and unstamped repos.
 > Verification: run in (a) the plugin repo, (b) an adopted+stamped repo, (c) a bare dir
 > — three correct, non-crashing outputs.
+
+## Notes
+
+Implemented on branch feat/substrate-version (commit 590a01a), gated green + operator-verified. Open until merged to main; kernel line activates when sub-0uxw ships the adopt stamp.

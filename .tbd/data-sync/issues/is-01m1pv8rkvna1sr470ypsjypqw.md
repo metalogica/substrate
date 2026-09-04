@@ -3,15 +3,17 @@ type: is
 id: is-01m1pv8rkvna1sr470ypsjypqw
 title: "adopt: stamp substrate kernel version+commit into the target repo"
 kind: feature
-status: open
+status: closed
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies:
   - type: blocks
     target: is-01m1pwcvyhybknz9fdcv502dcz
 created_at: 2026-09-04T18:35:33.370Z
-updated_at: 2026-09-04T18:55:16.431Z
+updated_at: 2026-09-04T19:34:06.227Z
+closed_at: 2026-09-04T19:34:06.224Z
+close_reason: "Landed on main: adopt Step 5 writes the substrate-kernel stamp (reader-grammar-exact, idempotent, dirty-in-parens); handoff prints it; opencode mirror in parity. Completes the pair with sub-avsm's reader."
 ---
 ## Why now
 Adopted repos carry NO record of which substrate installed them: substrate.yaml
