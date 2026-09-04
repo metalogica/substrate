@@ -2,7 +2,17 @@
   "serve-v1": {
     "status": "complete",
     "started": "2026-07-23T05:40:00Z",
-    "completed-steps": [3, 4, "4b", 5, 6, 7, 8, 9, 10],
+    "completed-steps": [
+      3,
+      4,
+      "4b",
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
     "context": "full",
     "completed": "2026-07-23T05:45:00Z",
     "narrative-commit": "17bc24a",
@@ -23,5 +33,24 @@
     "context": "full",
     "completed": "2026-07-07T17:15:05Z",
     "narrative-commit": "a9e06afe9b2aac71a045dca0cebb210d599fa59f"
+  },
+  "doctrine-crud": {
+    "status": "complete",
+    "started": "2026-09-04T15:20:00Z",
+    "completed": "2026-09-04T15:40:00Z",
+    "completed-steps": [
+      3,
+      4,
+      "4b",
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "context": "full",
+    "narrative-commit": null,
+    "notes": "Plugin-self-dogfood repo: no docs/doctrine/ (doctrine lives at references/docs-core/docs/doctrine/, reconciled in-epic by sub-ly37). Spec still under docs/tasks/ongoing/doctrine-crud/ \u2014 orchestrate has no archive step (sub-vk7c, updated). 4 immediate fixes in 3 commits (374e969 b87a98b 9956b19). Step 4b authored nothing: no architectural axis was introduced this session. 6 beads + 2 parked questions created under label src:synth-doctrine-crud (epic bead sub-308c is closed, so no --parent). Closed sub-7j1i (fixed in ccb3b9c). Updated sub-vk7c, sub-fsji."
   }
 }
