@@ -50,7 +50,7 @@
       10
     ],
     "context": "full",
-    "narrative-commit": null,
+    "narrative-commit": "aef3053",
     "notes": "Plugin-self-dogfood repo: no docs/doctrine/ (doctrine lives at references/docs-core/docs/doctrine/, reconciled in-epic by sub-ly37). Spec still under docs/tasks/ongoing/doctrine-crud/ \u2014 orchestrate has no archive step (sub-vk7c, updated). 4 immediate fixes in 3 commits (374e969 b87a98b 9956b19). Step 4b authored nothing: no architectural axis was introduced this session. 6 beads + 2 parked questions created under label src:synth-doctrine-crud (epic bead sub-308c is closed, so no --parent). Closed sub-7j1i (fixed in ccb3b9c). Updated sub-vk7c, sub-fsji."
   }
 }
